@@ -1388,7 +1388,7 @@ def sort_transcripts(trans_obj_list,trans_obj_dict):
 
         #max_digit_length = len(str(trans_end))
         max_digit_length = 10
-        max_pos_line_length = 2000
+        max_pos_line_length = 10000
         
         trans_pos_list = []
         
