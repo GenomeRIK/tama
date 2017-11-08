@@ -2387,6 +2387,8 @@ colour_source_count = 0
 source_colour_dict = {} # source_colour_dict[source] = colour number
 for colour_source in colour_source_list:
     colour_source_count += 1
+    if colour_source_count > 10:
+        colour_source_count = 10
     source_colour_dict[colour_source] = colour_source_count
 #####################################################
 
