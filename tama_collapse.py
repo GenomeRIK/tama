@@ -2180,6 +2180,20 @@ def reverse_complement(seq_list):
     comp_dict["G"] = "C"
     comp_dict["C"] = "G"
     comp_dict["N"] = "N"
+
+    comp_dict["R"] = "N"
+    comp_dict["Y"] = "N"
+    comp_dict["K"] = "N"
+
+    comp_dict["M"] = "N"
+    comp_dict["S"] = "N"
+    comp_dict["W"] = "N"
+
+    comp_dict["B"] = "N"
+    comp_dict["D"] = "N"
+    comp_dict["H"] = "N"
+    comp_dict["V"] = "N"
+
     
     reverse_seq = seq_list[::-1] # that's a neat way of reversing the string
     

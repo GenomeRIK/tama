@@ -2414,7 +2414,7 @@ for scaffold in scaff_list:
         if last_trans_end == 0:
             last_trans_end = trans_end_list[0]
         
-        if trans_start <= last_trans_end: # matches previous group
+        if trans_start < last_trans_end: # matches previous group
 
             for trans_end in trans_end_list:
                 # add transcripts to group
@@ -2422,7 +2422,7 @@ for scaffold in scaff_list:
                 if last_trans_end < trans_end: # update last trans end
                     last_trans_end = trans_end
         
-        elif trans_start > last_trans_end: # if this is a new group, process past group
+        elif trans_start >= last_trans_end: # if this is a new group, process past group
             
             total_gene_count = process_trans_group(group_trans_list,total_gene_count)
             
