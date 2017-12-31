@@ -43,6 +43,8 @@ ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (Default is 10)
 ap.add_argument('-m', type=str, nargs=1, help='Exon ends threshold/ splice junction threshold (Default is 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (Default is 10)')
 
+ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default is no merge and quit when duplicates are found)')
+
 opts = ap.parse_args()
 
 #check for missing args
@@ -79,6 +81,12 @@ if not opts.z:
     threeprime_threshold = 20
 else:
     threeprime_threshold = int(opts.z[0])
+
+if not opts.d:
+    print("Default duplicate merge flag: no_mnerge")
+    duplicate_flag = "no_merge"
+else:
+    duplicate_flag = str(opts.d[0])
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
@@ -325,8 +333,14 @@ class Merged:
 
     
     def add_merged_trans(self,trans_obj):
+
         merged_trans_id = trans_obj.uniq_trans_id
-        
+
+        if merged_trans_id in self.merged_trans_dict:
+            print("Transcript is already in this group")
+            return
+
+
         self.trans_list.append(merged_trans_id)
         self.trans_obj_list.append(trans_obj)
         
@@ -361,6 +375,10 @@ class Merged:
         
         self.e_start_trans_dict = e_start_trans_dict
         self.e_end_trans_dict = e_end_trans_dict
+
+        print(self.trans_list)
+        print(collapse_start_list)
+        print(collapse_end_list)
         
         for i in xrange(len(collapse_start_list)):
             e_start = collapse_start_list[i]
@@ -1033,8 +1051,12 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
         elif strand == "-":
             j = i # iterate from first exon for reverse strand
         
-        e_start_dict = {} # e_start_dict[start] = number of occurrences
-        e_end_dict = {} # e_end_dict[end] = number of occurrences
+        e_start_dict = {} # e_start_dict[priority number][start] = number of occurrences
+        e_end_dict = {} # e_end_dict[priority number][end] = number of occurrences
+
+        e_start_priority_dict = {} #e_start_priority_dict[e start priority] = 1
+        e_end_priority_dict = {} #e_end_priority_dict[e end priority] = 1
+
         for trans_obj in trans_obj_list:
             e_start_list = trans_obj.exon_start_list
             e_end_list = trans_obj.exon_end_list
@@ -1042,58 +1064,102 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
             # figure out priority for different features
             start_priority = trans_obj.start_priority
             end_priority = trans_obj.end_priority 
-            junction_priority = trans_obj.junction_priority 
+            junction_priority = trans_obj.junction_priority
+
+            this_cap_flag = source_dict[trans_obj.source_id]['seq_type']
             
             if i >= len(e_start_list):# use for no cap when exon numbers may not match
                 continue
             
             e_start = int(e_start_list[j])
             e_end = int(e_end_list[j])
-            
-            #do not use 5' end if this is not priority level one for start
-            if i == len(e_start_list)-1 and start_priority != best_start_priority:
-                if strand == "+":
-                    e_start = -1
-                elif strand == "-":
-                    e_end = -1
 
-            #do not use splice junctions if not priority
-            if junction_priority != best_junction_priority and max_exon_num > 1:
-                if i > 0 and i < len(e_start_list)-1 :
-                    continue 
-                if i == 0:
-                    if strand == "+":
-                        e_end = -1
-                    elif strand == "-":
-                        e_start = -1
-                    
-                if i == len(e_start_list)-1:
-                    if strand == "+":
-                        e_start = -1
-                    elif strand == "-":
-                        e_end = -1
             
-            # do not use 3' end if not priority
-            if i == 0 and end_priority != best_end_priority:
+            # if this is the first 5' exon of group, use 5' start priority, and junction end priority
+            if i == max_exon_num - 1:
                 if strand == "+":
-                    e_end = -1
-                elif strand == "-":
-                    e_start = -1
-                
-                
+                    e_start_priority = start_priority
+                    e_end_priority = junction_priority
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+
+                if strand == "-": # because e end is trans start
+                    e_start_priority = junction_priority
+                    e_end_priority = start_priority
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+
+            # if this is the first exon for this read and not the first for the transcript group then set priority to last for 5' end of exon
+            elif i <  max_exon_num - 1 and i == len(e_start_list)-1 :
+                if this_cap_flag != "no_cap": # this situation should only happen with nocap reads
+                    print("Error with capped transcript treated like no_cap")
+                    print(trans_obj.trans_id)
+                    sys.exit()
+
+                if strand == "+":
+                    e_start_priority = 999 # force e start priority to last
+                    e_end_priority = junction_priority
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+
+                if strand == "-":
+
+                    e_start_priority = junction_priority
+                    e_end_priority = 999 # force e end priority to last
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+
+
+            # if this is a junction exon then use junction priorities
+            elif i < max_exon_num - 1 and i < len(e_start_list)-1 and i > 0:
+                e_start_priority = junction_priority
+                e_end_priority = junction_priority
+
+                e_start_priority_dict[e_start_priority] = 1
+                e_end_priority_dict[e_end_priority] = 1
+
             
+            # if this is the 3' end of the transcript use end priority and junction priority for start
+            elif i == 0 :
+                if strand == "+":
+                    e_start_priority = junction_priority
+                    e_end_priority = end_priority
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+
+                if strand == "-":
+
+                    e_start_priority = end_priority
+                    e_end_priority = junction_priority
+
+                    e_start_priority_dict[e_start_priority] = 1
+                    e_end_priority_dict[e_end_priority] = 1
+            else:
+                print("no assignment of exon number within transcript group")
+                print(trans_obj.trans_id)
+                sys.exit()
+
             if e_start != -1:
-                if e_start not in e_start_dict:
-                    e_start_dict[e_start] = 0
+                if e_start_priority not in e_start_dict:
+                    e_start_dict[e_start_priority] = {}
+                if e_start not in e_start_dict[e_start_priority]:
+                    e_start_dict[e_start_priority][e_start] = 0
                     e_start_trans_dict[e_start] = {}
-                e_start_dict[e_start] += 1
+                e_start_dict[e_start_priority][e_start] += 1
                 e_start_trans_dict[e_start][trans_obj.uniq_trans_id] = 1
             
             if e_end != -1:
-                if e_end not in e_end_dict:
-                    e_end_dict[e_end] = 0
+                if e_end_priority not in e_end_dict:
+                    e_end_dict[e_end_priority] = {}
+                if e_end not in e_end_dict[e_end_priority]:
+                    e_end_dict[e_end_priority][e_end] = 0
                     e_end_trans_dict[e_end] = {}
-                e_end_dict[e_end] += 1
+                e_end_dict[e_end_priority][e_end] += 1
                 e_end_trans_dict[e_end][trans_obj.uniq_trans_id] = 1
         
         
@@ -1102,16 +1168,25 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
         long_e_start = -1
         short_e_start = -1
         num_starts = 0
-        for e_start in e_start_dict:
-            if e_start_dict[e_start] > num_starts:
+
+        start_priority_list = list(e_start_priority_dict.keys())
+        start_priority_list.sort()
+        best_start_priority = start_priority_list[0]
+
+        end_priority_list = list(e_end_priority_dict.keys())
+        end_priority_list.sort()
+        best_end_priority = end_priority_list[0]
+
+        for e_start in e_start_dict[best_start_priority]:
+            if e_start_dict[best_start_priority][e_start] > num_starts:
                 best_e_start = e_start
-                num_starts = e_start_dict[e_start]
-            
+                num_starts = e_start_dict[best_start_priority][e_start]
+
             if long_e_start == -1:
                 long_e_start = e_start
             if e_start < long_e_start:
                 long_e_start = e_start
-            
+
             if short_e_start == -1:
                 short_e_start = e_start
             if e_start > short_e_start:
@@ -1121,8 +1196,10 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
         most_starts = num_starts
         num_most_starts = 0
         most_long_e_start = -1
-        for e_start in e_start_dict:
-            if e_start_dict[e_start] == most_starts:
+
+
+        for e_start in e_start_dict[best_start_priority]:
+            if e_start_dict[best_start_priority][e_start] == most_starts:
                 num_most_starts += 1
                 if most_long_e_start == -1:
                     most_long_e_start = e_start
@@ -1141,10 +1218,10 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
         long_e_end = -1
         short_e_end = -1
         num_ends = 0
-        for e_end in e_end_dict:
-            if e_end_dict[e_end] > num_ends:
+        for e_end in e_end_dict[best_end_priority]:
+            if e_end_dict[best_end_priority][e_end] > num_ends:
                 best_e_end = e_end
-                num_ends = e_end_dict[e_end]
+                num_ends = e_end_dict[best_end_priority][e_end]
             
             if long_e_end == -1:
                 long_e_end = e_end
@@ -1160,8 +1237,8 @@ def collapse_transcripts(trans_obj_list,collapse_flag): #use this to collapse tr
         most_ends = num_ends
         num_most_ends = 0
         most_long_e_end = -1
-        for e_end in e_end_dict:
-            if e_end_dict[e_end] == most_ends:
+        for e_end in e_end_dict[best_end_priority]:
+            if e_end_dict[best_end_priority][e_end] == most_ends:
                 num_most_ends += 1
                 if most_long_e_end == -1:
                     most_long_e_end = e_end
@@ -1442,10 +1519,35 @@ def sort_transcripts(trans_obj_list,trans_obj_dict):
             for b_uniq_trans_id in pos_trans_dict[trans_pos_line].merged_trans_dict:
                 b_bed_line = trans_obj_dict[b_uniq_trans_id].format_bed_line(b_uniq_trans_id)
                 print(b_bed_line)
-            
-            
 
-            sys.exit()
+            if duplicate_flag == "no_merge":
+                print("By default TAMA merge does not allow merging of duplicate transcript groups.")
+                print("Duplicate transcript groups occur when different groupings of transcripts results in the same collapsed model.")
+                print("If you would like to merge duplicate transcript groups please add -d merge_dup to the arguments.")
+                sys.exit()
+            elif duplicate_flag == "merge_dup":
+
+                # add trans obj to merge group
+                for a_uniq_trans_id in trans_obj.merged_trans_dict:
+
+                    pos_trans_dict[trans_pos_line].add_merged_trans(trans_obj.merged_trans_dict[a_uniq_trans_id])
+
+                match_trans_obj_list = []
+
+                # collect trans obj in list
+                for b_uniq_trans_id in pos_trans_dict[trans_pos_line].merged_trans_dict:
+                    match_trans_obj_list.append(pos_trans_dict[trans_pos_line].merged_trans_dict[b_uniq_trans_id])
+
+                collapse_start_list, collapse_end_list, start_wobble_list, end_wobble_list, e_start_trans_dict, e_end_trans_dict = collapse_transcripts(match_trans_obj_list, collapse_flag)
+
+                # update merge info
+                pos_trans_dict[trans_pos_line].add_merge_info(collapse_start_list, collapse_end_list, start_wobble_list,end_wobble_list, e_start_trans_dict, e_end_trans_dict)
+
+                trans_obj = pos_trans_dict[trans_pos_line]
+
+            else:
+                print("Error with duplicate transcript group flag")
+                sys.exit()
         
         pos_trans_dict[trans_pos_line] = trans_obj
         pos_trans_list.append(trans_pos_line)
