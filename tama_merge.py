@@ -1550,8 +1550,9 @@ def sort_transcripts(trans_obj_list,trans_obj_dict):
                 sys.exit()
         
         pos_trans_dict[trans_pos_line] = trans_obj
-        pos_trans_list.append(trans_pos_line)
-    
+        #pos_trans_list.append(trans_pos_line)
+
+    pos_trans_list = list(pos_trans_dict.keys())
     pos_trans_list.sort()
     
     
