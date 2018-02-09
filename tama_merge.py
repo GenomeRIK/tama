@@ -43,7 +43,7 @@ ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (Default is 10)
 ap.add_argument('-m', type=str, nargs=1, help='Exon ends threshold/ splice junction threshold (Default is 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (Default is 10)')
 
-ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default is no merge and quit when duplicates are found)')
+ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default no_merge quits when duplicates are found, merge_dup will merge duplicates)')
 
 opts = ap.parse_args()
 

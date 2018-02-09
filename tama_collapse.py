@@ -39,7 +39,7 @@ ap.add_argument('-i', type=str, nargs=1, help='Identity (default 85)')
 ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (default 10)')
 ap.add_argument('-m', type=str, nargs=1, help='Exon/Splice junction threshold (default 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (default 10)')
-ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default is no merge and quit when duplicates are found)')
+ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default no_merge quits when duplicates are found, merge_dup will merge duplicates)')
 ap.add_argument('-sj', type=str, nargs=1, help='Use error threshold to prioritize the use of splice junction information from collapsing transcripts(default no_priority, activate with sj_priority)')
 ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors near splice junctions')
 
