@@ -39,6 +39,12 @@ ap.add_argument('-i', type=str, nargs=1, help='Identity (default 85)')
 ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (default 10)')
 ap.add_argument('-m', type=str, nargs=1, help='Exon/Splice junction threshold (default 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (default 10)')
+ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default is no merge and quit when duplicates are found)')
+ap.add_argument('-sj', type=str, nargs=1, help='Use error threshold to prioritize the use of splice junction information from collapsing transcripts(default no_priority, activate with sj_priority)')
+ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors near splice junctions')
+
+
+
 
 opts = ap.parse_args()
 
@@ -95,6 +101,24 @@ if not opts.z:
     threeprime_threshold = 10
 else:
     threeprime_threshold = int(opts.z[0])
+    
+if not opts.d:
+    print("Default duplicate merge flag: no_merge")
+    duplicate_flag = "no_merge"
+else:
+    duplicate_flag = str(opts.d[0])
+
+if not opts.sj:
+    print("Default splice junction priority: no_priority")
+    sj_priority_flag = "no_priority"
+else:
+    sj_priority_flag = str(opts.sj[0])
+
+if not opts.sjt:
+    print("Default splice junction error threshold: 10")
+    sj_err_threshold = 10
+else:
+    sj_err_threshold = int(opts.sjt[0])
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
@@ -129,6 +153,8 @@ prev_time = start_time
 a_window = 20
 a_perc_thresh = 70.0
 
+no_mismatch_flag = "0" # use this for showing no mismatch near splice junction
+# see calc_error_rate and  sj_error_priority_start and sj_error_priority_end
 
 bed_outfile_name = outfile_prefix + ".bed"
 outfile_bed = open(bed_outfile_name,"w")
@@ -141,7 +167,7 @@ outfile_cluster.write("\n")
 
 trans_report_outfile_name = outfile_prefix + "_trans_report.txt"
 outfile_trans_report = open(trans_report_outfile_name,"w")
-trans_report_line = "\t".join(["transcript_id","num_clusters","high_coverage","low_coverage","high_quality_percent","low_quality_percent","start_wobble_list","end_wobble_list"])
+trans_report_line = "\t".join(["transcript_id","num_clusters","high_coverage","low_coverage","high_quality_percent","low_quality_percent","start_wobble_list","end_wobble_list","collapse_sj_start_err","collapse_sj_end_err","collapse_error_nuc"])
 outfile_trans_report.write(trans_report_line)
 outfile_trans_report.write("\n")
 
@@ -301,6 +327,7 @@ def mismatch_seq(genome_seq,query_seq,genome_pos,seq_pos):
     
     genome_mismatch_list = []
     seq_mismatch_list = []
+    nuc_mismatch_list = []
     
     for i in xrange(len(genome_seq)):
         if genome_seq[i] != query_seq[i]:
@@ -308,8 +335,11 @@ def mismatch_seq(genome_seq,query_seq,genome_pos,seq_pos):
             seq_mismatch_coord = seq_pos + i
             genome_mismatch_list.append(genome_mismatch_coord)
             seq_mismatch_list.append(seq_mismatch_coord)
+            
+            nuc_mismatch_str = query_seq[i] + "." + genome_seq[i]
+            nuc_mismatch_list.append(nuc_mismatch_str)
     
-    return genome_mismatch_list,seq_mismatch_list
+    return genome_mismatch_list,seq_mismatch_list,nuc_mismatch_list
 
 
 ####################################################################################################
@@ -348,10 +378,16 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
     mis_count = 0
     
     all_genome_mismatch_list = []
+    all_nuc_mismatch_list = [] # this shows the nuc mismatch for the all_genome_mismatch_list
+
     insertion_list = []
     insertion_length_list = []
     deletion_list = []
     deletion_length_list = []
+
+    sj_pre_error_list = []
+    sj_post_error_list = []
+
     
     nomatch_dict = {} # nomatch_dict[non match id] = list
     nomatch_dict['mismatch_list'] = all_genome_mismatch_list
@@ -413,10 +449,11 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
 
             
             #get number and location of mis matches
-            genome_mismatch_list,seq_mismatch_list = mismatch_seq(genome_slice,seq_slice,genome_start,seq_start)
+            genome_mismatch_list,seq_mismatch_list,nuc_mismatch_list = mismatch_seq(genome_slice,seq_slice,genome_start,seq_start)
             
             mis_count = mis_count + len(genome_mismatch_list)
             all_genome_mismatch_list.extend(genome_mismatch_list)
+            all_nuc_mismatch_list.extend(nuc_mismatch_list)
             
             ### for variation detection start
             for mismatch_index in xrange(len(seq_mismatch_list)):
@@ -468,8 +505,225 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             
             continue
         elif cig_flag == "N":
+
+            sj_pre_error_builder_list = []
+            sj_post_error_builder_list = []
+
+
+            # check for errors before splice junction pre
+            #########################################
+            prev_cig_flag = cig_char_list[i - 1]
+            prev_cig_length = int(cig_dig_list[i - 1])
+
+            #############################################################################################################################
+            # Add sj error info
+            
+            prev_total_mismatch_length = 0
+            this_mismatch_length = 0 # keep track of where in  the error list of cig
+
+            all_genome_mismatch_index = len(all_genome_mismatch_list) - 1
+
+            prev_total_cig_length = prev_cig_length
+            prev_cig_index = i - 1
+            
+            this_cig_genome_pos = genome_pos
+
+            while prev_total_mismatch_length <= sj_err_threshold:
+                this_mismatch_length = this_mismatch_length + prev_cig_length
+                prev_total_mismatch_length = this_mismatch_length
+
+                if prev_cig_flag == "M":
+                    # if no mismatch
+                    if len(all_genome_mismatch_list) < 1: # no mismatch from M cigar regions up to this point 
+                        #last_genome_mismatch = -2 * sj_err_threshold
+                        
+                        if prev_total_mismatch_length <= sj_err_threshold: # no mis matches for this gene
+                            sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                    elif all_genome_mismatch_index >= 0:
+                        last_genome_mismatch = all_genome_mismatch_list[all_genome_mismatch_index]
+                        last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
+
+                        dist_prev_mismatch = genome_pos - last_genome_mismatch
+                        
+                        m_builder_add_count = 0 
+
+                        #while dist_prev_mismatch <= this_mismatch_length and dist_prev_mismatch <= sj_err_threshold:
+                        while last_genome_mismatch >= this_cig_genome_pos - prev_cig_length and last_genome_mismatch <= this_cig_genome_pos and dist_prev_mismatch <= sj_err_threshold: # dist_prev_mismatch is still in range of sj threshold
+
+                            sj_pre_error_builder_list.append(str(dist_prev_mismatch) + "." + last_nuc_mismatch)
+                            m_builder_add_count += 1
+
+                            all_genome_mismatch_index -= 1
+
+                            last_genome_mismatch = all_genome_mismatch_list[all_genome_mismatch_index]
+                            last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
+                            dist_prev_mismatch = genome_pos - last_genome_mismatch
+
+                            if all_genome_mismatch_index < 0:
+                                break
+                        
+                        if m_builder_add_count == 0:
+                            if prev_total_mismatch_length <= sj_err_threshold: #  still within in sj threshold so output
+                                sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+                        
+                    elif all_genome_mismatch_index < 0: #  length of mismatch list is not 0 but index has gone past that
+                        #last_genome_mismatch = -2 * sj_err_threshold
+                        if prev_total_mismatch_length <= sj_err_threshold: #  still within in sj threshold so output
+                            sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+                    else:
+                        print("Error with all_genome_mismatch_index")
+                        print(all_genome_mismatch_list)
+                        print(all_genome_mismatch_index)
+                        sys.exit()
+                elif prev_cig_flag != "N":
+
+                    prev_cig_flag = cig_char_list[prev_cig_index]
+                    prev_cig_length = int(cig_dig_list[prev_cig_index])
+
+                    sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                prev_cig_index -= 1
+
+                if prev_cig_index < 0 :
+                    break
+                
+                this_cig_genome_pos = this_cig_genome_pos - prev_cig_length
+                
+                prev_cig_flag = cig_char_list[prev_cig_index]
+                prev_cig_length = int(cig_dig_list[prev_cig_index])
+
+            if len(sj_pre_error_builder_list) == 0: # in case no errors are found
+                sj_pre_error_builder_list.append(no_mismatch_flag)
+
+            # end of adding sj error info prev
+            #############################################################################################################################
+
+            #########################################
+            # not related to sj error should probably move this up or down code of this block
+            #########################################
             intron_length = int(cig_dig_list[i])
             genome_pos = genome_pos + intron_length
+            #########################################
+
+            #check for errors after splice junction post
+            #########################################
+            next_cig_flag = cig_char_list[i + 1]
+            next_cig_length = int(cig_dig_list[i + 1])
+
+            #############################################################################################################################
+
+            next_total_mismatch_length = 0
+            this_mismatch_length = 0 # keep track of where in  the error list of cig
+
+            all_genome_mismatch_index = len(all_genome_mismatch_list) - 1
+
+            next_total_cig_length = next_cig_length
+            next_cig_index = i + 1
+
+            this_next_seq_pos = seq_pos
+            this_genome_pos = genome_pos
+
+            while next_total_mismatch_length <= sj_err_threshold:
+                this_mismatch_length = this_mismatch_length + next_cig_length
+                next_total_mismatch_length = this_mismatch_length
+
+                if next_cig_flag == "M":
+                    match_length = next_cig_length
+                    seq_start = this_next_seq_pos
+                    seq_end = this_next_seq_pos + match_length
+
+                    genome_start = this_genome_pos
+                    genome_end = this_genome_pos + match_length
+
+                    seq_slice = seq_list[seq_start:seq_end]
+                    genome_slice = fasta_dict[scaffold][genome_start:genome_end]
+
+                    genome_mismatch_list, seq_mismatch_list, nuc_mismatch_list = mismatch_seq(genome_slice, seq_slice, genome_start, seq_start)
+
+                    genome_mismatch_index = 0
+
+                    # if no mismatch
+                    if len(genome_mismatch_list) < 1: # no mismatch in this cig entry
+                        dist_next_mismatch = 2 * sj_err_threshold
+
+                        if next_total_mismatch_length <= sj_err_threshold:
+
+                            sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+
+                    elif genome_mismatch_index <= len(genome_mismatch_list):
+                        nuc_next_mismatch = nuc_mismatch_list[0]
+                        dist_next_mismatch = genome_mismatch_list[0] - this_genome_pos
+                        
+                        m_builder_add_count = 0 
+
+                        while dist_next_mismatch <= this_mismatch_length and dist_next_mismatch < sj_err_threshold:
+                            next_genome_mismatch = genome_mismatch_list[genome_mismatch_index]
+                            next_nuc_mismatch = nuc_mismatch_list[genome_mismatch_index]
+
+                            dist_next_mismatch = next_genome_mismatch - this_genome_pos
+
+                            if dist_next_mismatch <= sj_err_threshold: # this mismatch goes beyond this M length
+                                sj_post_error_builder_list.append(str(dist_next_mismatch) + "." + next_nuc_mismatch)
+                                m_builder_add_count += 1
+
+                            genome_mismatch_index += 1
+                            if genome_mismatch_index >= len(genome_mismatch_list):
+                                break
+                        
+                        if m_builder_add_count == 0:
+                            if next_total_mismatch_length <= sj_err_threshold:
+                                sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+                        
+
+                    else:
+                        print("Error with genome_mismatch_index")
+                        sys.exit()
+                elif next_cig_flag != "N":
+
+                    next_cig_flag = cig_char_list[next_cig_index]
+                    next_cig_length = int(cig_dig_list[next_cig_index])
+
+                    sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+
+
+                if next_cig_flag != "D": # increase this seq pos only if not a deletion
+                    this_next_seq_pos = this_next_seq_pos + next_cig_length
+
+                if next_cig_flag != "I":
+                        this_genome_pos = this_genome_pos + next_cig_length
+
+                next_cig_index += 1
+
+                if next_cig_index >= len(cig_char_list):
+                    break
+
+                next_cig_flag = cig_char_list[next_cig_index]
+                next_cig_length = int(cig_dig_list[next_cig_index])
+
+
+
+            if len(sj_post_error_builder_list) == 0: # in case no errors are found
+                sj_post_error_builder_list.append(no_mismatch_flag)
+
+            # end of adding sj error info post
+            #############################################################################################################################
+            #############################################################################################################################
+
+
+            sj_post_error_builder_line = "_".join(sj_post_error_builder_list)
+
+            sj_pre_error_builder_list_reverse = list(reversed(sj_pre_error_builder_list))
+            sj_pre_error_builder_line = "_".join(sj_pre_error_builder_list_reverse)
+
+            sj_pre_error_list.append(sj_pre_error_builder_line)
+            sj_post_error_list.append(sj_post_error_builder_line)
+
+
+            #########################################
+
+
+
             continue
     
     
@@ -482,7 +736,7 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
         
     #sys.exit()
     
-    return h_count,s_count,i_count,d_count,mis_count,nomatch_dict 
+    return h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list
 
 ####################################################################################################
 
@@ -551,13 +805,17 @@ class Transcript:
         
         self.num_exons = len(exon_start_list)
     
-    def add_mismatch(self,h_count,s_count,i_count,d_count,mis_count,nomatch_dict):
+    def add_mismatch(self,h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list):
         self.h_count = int(h_count)
         self.s_count = int(s_count)
         self.i_count = int(i_count)
         self.d_count = int(d_count)
         self.mis_count = int(mis_count)
         self.nomatch_dict = nomatch_dict
+
+        self.sj_pre_error_list = sj_pre_error_list
+
+        self.sj_post_error_list = sj_post_error_list
         
         #hard clipped seq is missing in given read seq so need to add
         self.seq_length = self.seq_length + h_count
@@ -709,7 +967,7 @@ class Merged:
             print("Error with merged trans not on the same strand")
             sys.exit()
 
-    def add_merge_info(self,collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list):
+    def add_merge_info(self,collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list ):
         self.collapse_start_list = collapse_start_list
         self.collapse_end_list = collapse_end_list
         self.start_wobble_list = start_wobble_list
@@ -720,7 +978,13 @@ class Merged:
 
         self.start_pos = collapse_start_list[0]
         self.end_pos = collapse_end_list[-1]
-    
+
+        self.collapse_sj_start_err_list = collapse_sj_start_err_list
+        self.collapse_sj_end_err_list = collapse_sj_end_err_list
+
+        self.collapse_start_error_nuc_list = collapse_start_error_nuc_list
+        self.collapse_end_error_nuc_list = collapse_end_error_nuc_list
+
     def format_bed_line(self):
         bed_list = []
         bed_list.append(str(self.scaff_name))
@@ -831,7 +1095,49 @@ class Merged:
         
         trans_report_list.append(start_wobble_line)
         trans_report_list.append(end_wobble_line)
-       
+
+        collapse_sj_start_err_list_str = []
+        collapse_sj_end_err_list_str = []
+        for i in xrange(len(self.collapse_sj_start_err_list)):
+            collapse_sj_start_err_list_str.append(str(self.collapse_sj_start_err_list[i]))
+            collapse_sj_end_err_list_str.append(str(self.collapse_sj_end_err_list[i]))
+
+        if self.strand == "+":
+            collapse_sj_start_err_list_str = list(reversed(collapse_sj_start_err_list_str))
+            collapse_sj_end_err_list_str = list(reversed(collapse_sj_end_err_list_str))
+
+        collapse_sj_start_err_list_line = ",".join(collapse_sj_start_err_list_str)
+        collapse_sj_end_err_list_line = ",".join(collapse_sj_end_err_list_str)
+
+        trans_report_list.append(collapse_sj_start_err_list_line)
+        trans_report_list.append(collapse_sj_end_err_list_line)
+
+
+        collapse_error_nuc_list = self.collapse_start_error_nuc_list
+        
+        if len(collapse_error_nuc_list) > 1:
+
+            if self.strand == "+":
+                if collapse_error_nuc_list[-1] ==  "na":
+                    collapse_error_nuc_list.pop(-1)
+                    collapse_error_nuc_list = list(reversed(collapse_error_nuc_list))
+                else:
+                    print("Error with collapse_error_nuc_list")
+                    sys.exit()
+            elif self.strand == "-":
+                if collapse_error_nuc_list[0] == "na":
+                    collapse_error_nuc_list.pop(0)
+                else:
+                    print("Error with collapse_error_nuc_list")
+                    sys.exit()
+            else:
+                print("Error with strand in format_trans_report_line")
+                sys.exit
+
+        collapse_error_nuc_list_line = ";".join(collapse_error_nuc_list)
+
+        trans_report_list.append(collapse_error_nuc_list_line)
+
         trans_report_line = "\t".join(trans_report_list)
         
         return trans_report_line
@@ -1094,7 +1400,160 @@ def compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand): #use t
 
 ####################################################################################################
 
+
+def sj_error_priority_start(sj_pre_error,sj_post_error):
+
+    if sj_post_error == no_mismatch_flag and sj_pre_error == no_mismatch_flag:
+        e_start_priority = 0
+    elif sj_post_error == no_mismatch_flag and sj_pre_error != no_mismatch_flag:
+        e_start_priority = 1
+    elif sj_post_error != no_mismatch_flag and sj_pre_error == no_mismatch_flag:
+        e_start_priority = 2
+    elif sj_post_error != no_mismatch_flag and sj_pre_error != no_mismatch_flag:
+        e_start_priority = 3
+    else:
+        print("Error with splice junction priority start")
+        sys.exit()
+
+    return e_start_priority
+
+
+def sj_error_priority_end(sj_pre_error, sj_post_error):
+    if sj_post_error == no_mismatch_flag and sj_pre_error == no_mismatch_flag:
+        e_end_priority = 0
+    elif sj_post_error != no_mismatch_flag and sj_pre_error == no_mismatch_flag:
+        e_end_priority = 1
+    elif sj_post_error == no_mismatch_flag and sj_pre_error != no_mismatch_flag:
+        e_end_priority = 2
+    elif sj_post_error != no_mismatch_flag and sj_pre_error != no_mismatch_flag:
+        e_end_priority = 3
+    else:
+        print("Error with splice junction priority end")
+        sys.exit()
+
+    return e_end_priority
+
+
 ####################################################################################################
+def sj_error_priority_finder(trans_obj,i,max_exon_num):
+    #figure out errors near splice junctions
+    ######################################################
+
+    e_start_list = trans_obj.exon_start_list
+    e_end_list = trans_obj.exon_end_list
+
+    strand = trans_obj.strand
+    exon_num = len(e_start_list)
+    if max_exon_num == "none":
+        max_exon_num = exon_num
+
+    sj_pre_error_list = trans_obj.sj_pre_error_list
+    sj_post_error_list = trans_obj.sj_post_error_list
+    
+    #use these to record the error type
+    e_start_priority_error = "na"
+    e_end_priority_error = "na"
+
+    priority_error_delimit = ">"
+
+    if len(e_start_list) > 1: # if there are splice junctions to cover
+
+        if strand == "+":
+            if i == 0:  # last 3' exon accoridng to genome
+                e_end_priority = 0
+
+                sj_pre_error = sj_pre_error_list[-1]
+                sj_post_error = sj_post_error_list[-1]
+
+                e_start_priority = sj_error_priority_start(sj_pre_error, sj_post_error)
+                
+                e_start_priority_error = sj_pre_error + priority_error_delimit + sj_post_error
+
+            elif i > 0 and i < max_exon_num - 1: # middle exons
+
+                sj_pre_error_start = sj_pre_error_list[-1 - i]
+                sj_post_error_start = sj_post_error_list[-1 - i]
+
+                sj_pre_error_end = sj_pre_error_list[-i]
+                sj_post_error_end = sj_post_error_list[-i]
+
+                e_start_priority = sj_error_priority_start(sj_pre_error_start, sj_post_error_start)
+                e_end_priority = sj_error_priority_end(sj_pre_error_end, sj_post_error_end)
+                
+                e_start_priority_error = sj_pre_error_start + priority_error_delimit + sj_post_error_start
+                e_end_priority_error = sj_pre_error_end + priority_error_delimit + sj_post_error_end
+                
+
+
+            elif i == max_exon_num - 1: # first 5' exon
+                e_start_priority = 0
+                sj_pre_error_end = sj_pre_error_list[-i]
+                sj_post_error_end = sj_post_error_list[-i]
+
+                e_end_priority = sj_error_priority_end(sj_pre_error_end, sj_post_error_end)
+                
+                e_end_priority_error = sj_pre_error_end + priority_error_delimit + sj_post_error_end
+                
+
+            else:
+                print("Error with plus strand start and end priority")
+                sys.exit()
+
+
+        elif strand == "-":
+            if i == 0:  # 5' first exon according to genome
+                e_start_priority = 0
+
+                sj_post_error = sj_post_error_list[0]
+                sj_pre_error = sj_pre_error_list[0]
+
+                e_end_priority = sj_error_priority_end(sj_pre_error, sj_post_error)
+                
+                e_end_priority_error = sj_pre_error + priority_error_delimit + sj_post_error
+
+            elif i > 0 and i < max_exon_num - 1: # middle exons
+
+                sj_pre_error_start = sj_pre_error_list[i-1]
+                sj_post_error_start = sj_post_error_list[i-1]
+
+                sj_pre_error_end = sj_pre_error_list[i]
+                sj_post_error_end = sj_post_error_list[i]
+
+                e_start_priority = sj_error_priority_start(sj_pre_error_start, sj_post_error_start)
+                e_end_priority = sj_error_priority_end(sj_pre_error_end, sj_post_error_end)
+                
+                e_start_priority_error = sj_pre_error_start + priority_error_delimit + sj_post_error_start
+                e_end_priority_error = sj_pre_error_end + priority_error_delimit + sj_post_error_end
+
+
+            elif i == max_exon_num - 1: # last 3' exon according to genome
+                e_end_priority = 0
+                sj_pre_error_start = sj_pre_error_list[i - 1]
+                sj_post_error_start = sj_post_error_list[i - 1]
+
+                e_start_priority = sj_error_priority_start(sj_pre_error_start, sj_post_error_start)
+        
+                e_start_priority_error = sj_pre_error_start + priority_error_delimit + sj_post_error_start
+
+            else:
+                print("Error with minus strand start and end priority")
+                sys.exit()
+    else: # if 1 exon read
+        e_start_priority = 0
+        e_end_priority = 0
+
+    # you can turn priority on or off with arguments
+    if sj_priority_flag == "no_priority":
+        e_start_priority = 0
+        e_end_priority = 0
+    elif sj_priority_flag != "sj_priority":
+        print("Error with splice junction priority flag. Please use no_priority or sj_priority.")
+        sys.exit()
+
+    return e_start_priority,e_end_priority,e_start_priority_error,e_end_priority_error
+
+##############################################################
+
 
 def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use this to collapse transcripts
     # all supplied transcripts will be merged
@@ -1128,6 +1587,15 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
     collapse_start_list = []
     collapse_end_list = []
     
+    #use these to record actualy nuc mismatch info for collapsed models
+    collapse_start_error_nuc_list = []
+    collapse_end_error_nuc_list = []
+
+    #use these to keep track of errors near splice junctions
+    collapse_sj_start_err_list = []
+    collapse_sj_end_err_list = []
+
+    
     
     #track how much wobble for the starts and end in the collapse
     start_wobble_list = []
@@ -1137,20 +1605,39 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
             j = -1 * (i + 1) #iterate from last exon to account for possible 5' degradation for forward strand
         elif strand == "-":
             j = i # iterate from first exon for reverse strand
+
+        e_start_dict = {}  # e_start_dict[priority number][start] = number of occurrences
+        e_end_dict = {}  # e_end_dict[priority number][end] = number of occurrences
         
-        e_start_dict = {} # e_start_dict[start] = number of occurrences
-        e_end_dict = {} # e_end_dict[end] = number of occurrences
+        priority_error_start_dict = {} #priority_error_start_dict[priority number][start][error string] = 1
+        priority_error_end_dict = {} #priority_error_end_dict[priority number][end][error string] = 1
+
+
+        #e_start_dict = {} # e_start_dict[start] = number of occurrences
+        #e_end_dict = {} # e_end_dict[end] = number of occurrences
+
+        #use these to get wobble despite sj priority algorithm
+        e_start_range_list = []
+        e_end_range_list = []
+
         for trans_obj in trans_obj_list:
             e_start_list = trans_obj.exon_start_list
             e_end_list = trans_obj.exon_end_list
-            
+
+
+            # figure out errors near splice junctions
+            ######################################################
+            sj_pre_error_list = trans_obj.sj_pre_error_list
+            sj_post_error_list = trans_obj.sj_post_error_list
+
+            e_start_priority, e_end_priority, e_start_priority_error,e_end_priority_error = sj_error_priority_finder(trans_obj, i, max_exon_num) ####################################
+
             if i >= len(e_start_list):# use for no cap when exon numbers may not match
                 continue
             
             e_start = int(e_start_list[j])
             e_end = int(e_end_list[j])
-            
-            
+
             #Use this to prevent using truncated 5' end of trans without max exon num
             if fiveprime_cap_flag == "no_cap":####################################################################
                 #do not use 5' end if this is not priority level one for start
@@ -1160,24 +1647,67 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
                     elif strand == "-":
                         e_end = -1
             
-            if e_start != -1: # check that it isnt truncated 5' end       
-                if e_start not in e_start_dict:
-                    e_start_dict[e_start] = 0
-                e_start_dict[e_start] += 1
+            if e_start != -1: # check that it isnt truncated 5' end
+                if e_start_priority not in e_start_dict:
+                    e_start_dict[e_start_priority] = {}
+                    priority_error_start_dict[e_start_priority] = {} #####################################################
+                if e_start not in e_start_dict[e_start_priority]:
+                    e_start_dict[e_start_priority][e_start] = 0
+                    priority_error_start_dict[e_start_priority][e_start] = {} #####################################################
+
+                e_start_range_list.append(e_start) #use these to get wobble despite sj priority algorithm
+
+                e_start_dict[e_start_priority][e_start] += 1
+                
+                priority_error_start_dict[e_start_priority][e_start][e_start_priority_error] = 1
+            else:
+                e_start_dict[e_start_priority] = {}
+                
+                priority_error_start_dict[e_start_priority] = {}
+
+
             
             if e_end != -1: # check that it isnt truncated 5' end
-                if e_end not in e_end_dict:
-                    e_end_dict[e_end] = 0
-                e_end_dict[e_end] += 1
-        
+                if e_end_priority not in e_end_dict:
+                    e_end_dict[e_end_priority] = {}
+                    priority_error_end_dict[e_end_priority] = {}#####################################################
+                if e_end not in e_end_dict[e_end_priority]:
+                    e_end_dict[e_end_priority][e_end] = 0
+                    priority_error_end_dict[e_end_priority][e_end] = {} #####################################################
+
+                e_end_range_list.append(e_end) #use these to get wobble despite sj priority algorithm
+
+                e_end_dict[e_end_priority][e_end] += 1
+                
+                priority_error_end_dict[e_end_priority][e_end][e_end_priority_error] = 1
+            else:
+                e_end_dict[e_end_priority] = {}
+                
+                priority_error_end_dict[e_end_priority] = {}
+
+        ##########################################
+
         best_e_start = -1
         long_e_start = -1
         short_e_start = -1
         num_starts = 0
-        for e_start in e_start_dict:
-            if e_start_dict[e_start] > num_starts:
+
+        priority_start_list = list(e_start_dict.keys())
+        priority_end_list = list(e_end_dict.keys())
+        
+        priority_start_list.sort()
+        priority_end_list.sort()
+
+        best_start_priority = priority_start_list[0]
+        best_end_priority = priority_end_list[0]
+
+        collapse_sj_start_err_list.append(best_start_priority)
+        collapse_sj_end_err_list.append(best_end_priority)
+
+        for e_start in e_start_dict[best_start_priority]:
+            if e_start_dict[best_start_priority][e_start] > num_starts:
                 best_e_start = e_start
-                num_starts = e_start_dict[e_start]
+                num_starts = e_start_dict[best_start_priority][e_start]
             
             if long_e_start == -1:
                 long_e_start = e_start
@@ -1193,8 +1723,8 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         most_starts = num_starts
         num_most_starts = 0
         most_long_e_start = -1
-        for e_start in e_start_dict:
-            if e_start_dict[e_start] == most_starts:
+        for e_start in e_start_dict[best_start_priority]:
+            if e_start_dict[best_start_priority][e_start] == most_starts:
                 num_most_starts += 1
                 if most_long_e_start == -1:
                     most_long_e_start = e_start
@@ -1205,18 +1735,20 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
             if num_trans > 2:
                 print("more than one best e start! " + str(best_e_start) + " num_trans: " + str(num_trans))
         ##########################################
-        
-        e_start_wobble = short_e_start - long_e_start
+
+        e_start_range_list.sort()
+
+        e_start_wobble = e_start_range_list[-1] - e_start_range_list[0]
         start_wobble_list.append(e_start_wobble)
         
         best_e_end = 0
         long_e_end = -1
         short_e_end = -1
         num_ends = 0
-        for e_end in e_end_dict:
-            if e_end_dict[e_end] > num_ends:
+        for e_end in e_end_dict[best_end_priority]:
+            if e_end_dict[best_end_priority][e_end] > num_ends:
                 best_e_end = e_end
-                num_ends = e_end_dict[e_end]
+                num_ends = e_end_dict[best_end_priority][e_end]
             
             if long_e_end == -1:
                 long_e_end = e_end
@@ -1232,8 +1764,8 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         most_ends = num_ends
         num_most_ends = 0
         most_long_e_end = -1
-        for e_end in e_end_dict:
-            if e_end_dict[e_end] == most_ends:
+        for e_end in e_end_dict[best_end_priority]:
+            if e_end_dict[best_end_priority][e_end] == most_ends:
                 num_most_ends += 1
                 if most_long_e_end == -1:
                     most_long_e_end = e_end
@@ -1244,8 +1776,10 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
             if num_trans > 2:
                 print("more than one best e end! " + str(best_e_end) + " num_trans: " + str(num_trans))
         ##########################################
-        
-        e_end_wobble = long_e_end - short_e_end
+
+        e_end_range_list.sort()
+
+        e_end_wobble = e_end_range_list[-1] - e_end_range_list[0]
         end_wobble_list.append(e_end_wobble)
         
         if fiveprime_cap_flag == "no_cap" and i+1 == max_exon_num: # use earliest 5' end for no cap libraries
@@ -1284,6 +1818,15 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         
         collapse_start_list.append(best_e_start)
         collapse_end_list.append(best_e_end)
+        
+        priority_error_start_list = list(priority_error_start_dict[best_start_priority][best_e_start].keys()) ###########################################################################
+        priority_error_end_list = list(priority_error_end_dict[best_end_priority][best_e_end].keys())
+        
+        priority_error_start_line = "-".join(priority_error_start_list)
+        priority_error_end_line = "-".join(priority_error_end_list)
+        
+        collapse_start_error_nuc_list.append(priority_error_start_line)
+        collapse_end_error_nuc_list.append(priority_error_end_line)
 
     #put the coords in the right order maintaining order with wobble lists
     collapse_start_list, start_wobble_list = zip(*sorted(zip(collapse_start_list, start_wobble_list)))
@@ -1324,9 +1867,26 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         prev_end = check_end
     # Above: check start and end list to make sure there are no overlapping coordinates
     #######################################################      
-        
+
+    #flip order of sj err list if the strand is positive since we started from the 3' end.
+#    if strand == "+":
+#        collapse_sj_start_err_list = list(reversed(collapse_sj_start_err_list))
+#        collapse_sj_end_err_list = list(reversed(collapse_sj_end_err_list))
+
+        #collapse_start_error_nuc_list = list(reversed(collapse_start_error_nuc_list))
+        #collapse_end_error_nuc_list = list(reversed(collapse_end_error_nuc_list))
+
+#    elif strand == "-":
+#        collapse_sj_start_err_list = collapse_sj_start_err_list
+#        collapse_sj_end_err_list = collapse_sj_end_err_list
+#    else:
+#        print("Issue with strand value in collapse transcripts")
+#        print(strand)
+#        sys.exit()
+
+
     
-    return collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list
+    return collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list
 
 ####################################################################################################
 
@@ -1500,52 +2060,182 @@ def gene_group(trans_list): #groups trans into genes, does not take into account
 
 ####################################################################################################
 
+####################################################################################################
+
+def iterate_sort_list(list_trans_pos_list,pos_index):
+    # sort the list by each element
+    sort_flag = 0
+
+    blah_flag = 0
+
+    while sort_flag == 0:
+
+        pre_pos = -1
+
+        same_order_index_dict = {}  # same_order_index_dict[pos][index] = 1
+
+        # collect positions and index where the sort was equal
+        for j in xrange(len(list_trans_pos_list)):
+
+            trans_pos_line_split = list_trans_pos_list[j]
+            pos_element = trans_pos_line_split[pos_index]
+
+            if pos_element == pre_pos:
+                if pre_pos not in same_order_index_dict:
+                    same_order_index_dict[pre_pos] = {}
+                    same_order_index_dict[pre_pos][j-1] = 1
+
+                if pos_element not in same_order_index_dict:
+                    same_order_index_dict[pos_element] = {}
+                same_order_index_dict[pos_element][j] = 1
+
+            pre_pos = pos_element
+
+        same_order_index_list = list(same_order_index_dict.keys())
+        same_order_index_list.sort()
+
+        if len(same_order_index_list) == 0:
+            sort_flag = 1
+        else:
+            for pos_element in same_order_index_list:
+                slice_pos_index_list = list(same_order_index_dict[pos_element].keys())
+                slice_pos_index_list.sort()
+
+                # check for iterative index
+                past_pos = "na"
+                for this_pos in slice_pos_index_list:
+                    if past_pos == "na":
+                        past_pos = this_pos
+
+                    elif this_pos != past_pos + 1:
+                        print("Error with non-consequtive indices for same pos in trans sorting.")
+                        print(slice_pos_index_list)
+                        sys.exit()
+                    else:
+                        past_pos = this_pos
+
+                min_index = slice_pos_index_list[0]
+                max_index = slice_pos_index_list[-1] + 1
+
+                # replace slice with ordered slice
+                list_slice = list_trans_pos_list[min_index:max_index]
+                list_slice.sort(key=lambda x: int(x[pos_index + 1]))
+
+                [list_slice, sort_flag] = iterate_sort_list(list_slice, pos_index + 1)
+
+                list_trans_pos_list[min_index:max_index] = list_slice
+
+    return [list_trans_pos_list,sort_flag]
+
+
+####################################################################################################
+
+def sort_pos_trans_list(pos_trans_list,pos_trans_dict):
+    # sort the pos_trans_list according to position of transcripts on chromosome
+
+    sorted_trans_list = []
+
+    new_pos_trans_dict = {}
+
+    list_trans_pos_list = [] # this is a list of lists
+
+    max_pos_num = 0
+
+    #get max number of elements for pos lists
+    for trans_pos_line in pos_trans_list:
+        trans_pos_line_split = trans_pos_line.split(",")
+
+        if max_pos_num < len(trans_pos_line_split):
+            max_pos_num = len(trans_pos_line_split)
+
+    for trans_pos_line in pos_trans_list:
+        trans_pos_line_split = trans_pos_line.split(",")
+
+        diff_pos = max_pos_num - len(trans_pos_line_split)
+
+        # pad out list so all pos lists have same number of elements
+        for i in xrange(diff_pos):
+            trans_pos_line_split.append(0)
+
+        trans_pos_line_split_str = []
+        for pos_element in trans_pos_line_split:
+            trans_pos_line_split_str.append(str(pos_element))
+
+        new_trans_pos_line = ",".join(trans_pos_line_split_str)
+
+        new_pos_trans_dict[new_trans_pos_line] = pos_trans_dict[trans_pos_line]
+
+        list_trans_pos_list.append(trans_pos_line_split)
+
+    #sort the list by each element
+    i = 0
+
+    list_trans_pos_list.sort(key=lambda x: int(x[i]))
+
+    pos_index = i
+
+    [list_trans_pos_list, sort_flag] = iterate_sort_list(list_trans_pos_list, pos_index)
+
+    if sort_flag != 1:
+        print("Error with sort flag!")
+        print(sort_flag)
+        sys.exit()
+
+    for trans_pos_line_split in list_trans_pos_list:
+        trans_pos_line_split_str = []
+        for pos_element in trans_pos_line_split:
+            trans_pos_line_split_str.append(str(pos_element))
+
+        new_trans_pos_line = ",".join(trans_pos_line_split_str)
+        sorted_trans_list.append(new_trans_pos_line)
+
+
+    return [sorted_trans_list,new_pos_trans_dict]
+
+
+####################################################################################################
+
+
+####################################################################################################
+
+
 def sort_transcripts(trans_obj_list):
     #sort transcripts by start-end-exon starts
-    #pad with 0 for numerical sort (prevents 23 from being after 203)
-    
+
     pos_trans_dict = {} # pos_trans_dict[pos] = trans obj
     pos_trans_list = []
     
     for trans_obj in trans_obj_list:
+        trans_scaff = trans_obj.scaff_name
         trans_exon_start_list = trans_obj.exon_start_list
         trans_exon_end_list = trans_obj.exon_end_list
         trans_exon_start_list.sort()
         trans_exon_end_list.sort()
         trans_start = trans_exon_start_list[0]
         trans_end = trans_exon_end_list[-1]
-
-        #max_digit_length = len(str(trans_end))
-        max_digit_length = 10
-        max_pos_line_length = 2000
         
         trans_pos_list = []
-        
-        trans_start_pad = str(trans_start).rjust(max_digit_length,'0') #pad with 0 on left side
-        trans_end_pad = str(trans_end).rjust(max_digit_length,'0') #pad with 0 on left side
-        
-        
-        trans_pos_list.append("1")
-        trans_pos_list.append(str(trans_start_pad))
-        trans_pos_list.append(str(trans_end_pad))
-        
-        for exon_start in trans_exon_start_list:
-            exon_start_pad = str(exon_start).rjust(max_digit_length,'0') #pad with 0 on left side
-            trans_pos_list.append(exon_start_pad)
-        
-        for exon_end in trans_exon_end_list:
-            exon_end_pad = str(exon_end).rjust(max_digit_length,'0') #pad with 0 on left side
-            trans_pos_list.append(exon_end_pad)
-        
+
+        trans_pos_list.append(str(trans_start))
+        trans_pos_list.append(",")
+        trans_pos_list.append(str(trans_end))
+        trans_pos_list.append(",")
+
+        num_exons = len(trans_exon_start_list)
+
+        for i in xrange(num_exons):
+            exon_start = trans_exon_start_list[i]
+            trans_pos_list.append(str(exon_start))
+            trans_pos_list.append(",")
+
+            exon_end = trans_exon_end_list[i]
+            trans_pos_list.append(str(exon_end))
+            trans_pos_list.append(",")
+
+        # remove last element because it is a comma
+        trans_pos_list.pop(-1)
+
         trans_pos_line = "".join(trans_pos_list)
-        
-        if len(trans_pos_line) > max_pos_line_length:
-            print("padding for trans pos line is insufficient. Use larger max_pos_line_length")
-            sys.exit()
-            
-        trans_pos_line = trans_pos_line.ljust(max_pos_line_length,'0')
-        
-        trans_pos_line = int(trans_pos_line)
 
         
         if trans_pos_line in pos_trans_dict:
@@ -1574,17 +2264,51 @@ def sort_transcripts(trans_obj_list):
             print("end duplicate###########################################")
 
             #sys.exit()
+            
+            #################################################################################
+            #################################################################################
+            if duplicate_flag == "no_merge":
+                print("By default TAMA collapse does not allow merging of duplicate transcript groups.")
+                print("Duplicate transcript groups occur when different groupings of transcripts results in the same collapsed model.")
+                print("If you would like to merge duplicate transcript groups please add -d merge_dup to the arguments.")
+                sys.exit()
+            elif duplicate_flag == "merge_dup":
+
+                # add trans obj to merge group
+                for a_uniq_trans_id in trans_obj.merged_trans_dict:
+
+                    pos_trans_dict[trans_pos_line].add_merged_trans(trans_obj.merged_trans_dict[a_uniq_trans_id])
+
+                match_trans_obj_list = []
+
+                # collect trans obj in list
+                for b_uniq_trans_id in pos_trans_dict[trans_pos_line].merged_trans_dict:
+                    match_trans_obj_list.append(pos_trans_dict[trans_pos_line].merged_trans_dict[b_uniq_trans_id])
+
+                #collapse_start_list, collapse_end_list, start_wobble_list, end_wobble_list, e_start_trans_dict, e_end_trans_dict = collapse_transcripts(match_trans_obj_list, collapse_flag)
+                collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list = collapse_transcripts(match_trans_obj_list,fiveprime_cap_flag,collapse_flag)
+
+                # update merge info
+                #pos_trans_dict[trans_pos_line].add_merge_info(collapse_start_list, collapse_end_list, start_wobble_list,end_wobble_list, e_start_trans_dict, e_end_trans_dict)
+                pos_trans_dict[trans_pos_line].add_merge_info(collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
+
+                trans_obj = pos_trans_dict[trans_pos_line]
+
+            else:
+                print("Error with duplicate transcript group flag")
+                sys.exit()
+            #################################################################################
+            #################################################################################
         
         pos_trans_dict[trans_pos_line] = trans_obj
         pos_trans_list.append(trans_pos_line)
     
-    pos_trans_list.sort()
-    
+    [new_pos_trans_list,new_pos_trans_dict] = sort_pos_trans_list(pos_trans_list, pos_trans_dict)
     
     sorted_trans_obj_list = []
-    for pos_trans in pos_trans_list:
+    for pos_trans in new_pos_trans_list:
         
-        trans_obj = pos_trans_dict[pos_trans]
+        trans_obj = new_pos_trans_dict[pos_trans]
         sorted_trans_obj_list.append(trans_obj)
         tmp_id = trans_obj.trans_id
 
@@ -2437,13 +3161,13 @@ with open(sam_file) as sam_file_contents:
         
         [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
     
-        [h_count,s_count,i_count,d_count,mis_count,nomatch_dict] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
+        [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
     
         trans_obj = Transcript(read_id)
         trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
         trans_obj.add_map_seq_length(map_seq_length)
         trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
-        trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict)
+        trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
         
         percent_coverage = trans_obj.calc_coverage()
         percent_identity = trans_obj.calc_identity()
@@ -2662,9 +3386,9 @@ for i in xrange(total_group_count+1):
                 redundant_trans_flag = 0
                 if len(match_trans_obj_list) > 1: #if there are redundant transcripts, collapse
                     redundant_trans_flag = 1
-                    collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list = collapse_transcripts(match_trans_obj_list,fiveprime_cap_flag,collapse_flag)
+                    collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list = collapse_transcripts(match_trans_obj_list,fiveprime_cap_flag,collapse_flag)
                     
-                    merged_obj.add_merge_info(collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list)
+                    merged_obj.add_merge_info(collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
                 else: # if only one transcript
                     exon_start_list = match_trans_obj_list[0].exon_start_list
                     exon_end_list = match_trans_obj_list[0].exon_end_list
@@ -2674,7 +3398,27 @@ for i in xrange(total_group_count+1):
                     exon_start_list.sort()
                     exon_end_list.sort()
 
-                    merged_obj.add_merge_info(exon_start_list,exon_end_list,start_wobble_list,end_wobble_list)
+                    collapse_sj_start_err_list = []
+                    collapse_sj_end_err_list = []
+                    solo_trans_obj = match_trans_obj_list[0]
+                    max_exon_num = len(exon_start_list)
+
+                    collapse_start_error_nuc_list = []
+                    collapse_end_error_nuc_list = []
+
+                    for exon_index in xrange(len(exon_start_list)):  # go from 3 prime end
+                        e_start_priority, e_end_priority, e_start_priority_error,e_end_priority_error = sj_error_priority_finder(solo_trans_obj, exon_index, max_exon_num)  ####################################
+
+                        collapse_sj_start_err_list.append(e_start_priority)
+                        collapse_sj_end_err_list.append(e_end_priority)
+
+                        collapse_start_error_nuc_list.append(e_start_priority_error)
+                        collapse_end_error_nuc_list.append(e_end_priority_error)
+
+                    #collapse_sj_start_err_list = trans_obj.sj_pre_error_list
+                    #collapse_sj_end_err_list = trans_obj.sj_post_error_list
+
+                    merged_obj.add_merge_info(exon_start_list,exon_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
                 
                 merge_obj_list.append(merged_obj)
                 

@@ -83,7 +83,7 @@ else:
     threeprime_threshold = int(opts.z[0])
 
 if not opts.d:
-    print("Default duplicate merge flag: no_mnerge")
+    print("Default duplicate merge flag: no_merge")
     duplicate_flag = "no_merge"
 else:
     duplicate_flag = str(opts.d[0])
@@ -1448,6 +1448,161 @@ def gene_group(trans_obj_list): #groups trans into genes, does not take into acc
 
 ####################################################################################################
 
+####################################################################################################
+
+def iterate_sort_list(list_trans_pos_list,pos_index):
+    # sort the list by each element
+    sort_flag = 0
+
+    blah_flag = 0
+
+    while sort_flag == 0:
+
+        pre_pos = -1
+
+        same_order_index_dict = {}  # same_order_index_dict[pos][index] = 1
+
+        # collect positions and index where the sort was equal
+        for j in xrange(len(list_trans_pos_list)):
+
+            trans_pos_line_split = list_trans_pos_list[j]
+            pos_element = trans_pos_line_split[pos_index]
+
+            if pos_element == "971115":
+                blah_flag = 1
+
+
+            if pos_element == pre_pos:
+                if pre_pos not in same_order_index_dict:
+                    same_order_index_dict[pre_pos] = {}
+                    same_order_index_dict[pre_pos][j-1] = 1
+
+                if pos_element not in same_order_index_dict:
+                    same_order_index_dict[pos_element] = {}
+                same_order_index_dict[pos_element][j] = 1
+
+            pre_pos = pos_element
+
+        same_order_index_list = list(same_order_index_dict.keys())
+        same_order_index_list.sort()
+
+        if len(same_order_index_list) == 0:
+            sort_flag = 1
+        else:
+            for pos_element in same_order_index_list:
+                slice_pos_index_list = list(same_order_index_dict[pos_element].keys())
+                slice_pos_index_list.sort()
+
+                # check for iterative index
+                past_pos = "na"
+                for this_pos in slice_pos_index_list:
+                    if past_pos == "na":
+                        past_pos = this_pos
+
+                    elif this_pos != past_pos + 1:
+                        print("Error with non-consequtive indices for same pos in trans sorting.")
+                        print(slice_pos_index_list)
+                        sys.exit()
+                    else:
+                        past_pos = this_pos
+
+                min_index = slice_pos_index_list[0]
+                max_index = slice_pos_index_list[-1] + 1
+
+                # replace slice with ordered slice
+                list_slice = list_trans_pos_list[min_index:max_index]
+                list_slice.sort(key=lambda x: int(x[pos_index + 1]))
+
+                if blah_flag == 1:
+                    print("blah blah 1")
+                    print(list_slice)
+                    print(min_index)
+                    print(max_index)
+
+                [list_slice, sort_flag] = iterate_sort_list(list_slice, pos_index + 1)
+
+                if blah_flag == 1:
+                    print("blah blah 2")
+                    print(list_slice)
+                    print(pos_index)
+
+                list_trans_pos_list[min_index:max_index] = list_slice
+
+    if blah_flag == 1:
+        print("blah blah 3")
+        print(list_trans_pos_list)
+#        sys.exit()
+
+    return [list_trans_pos_list,sort_flag]
+
+
+####################################################################################################
+
+def sort_pos_trans_list(pos_trans_list,pos_trans_dict):
+    # sort the pos_trans_list according to position of transcripts on chromosome
+
+    sorted_trans_list = []
+
+    new_pos_trans_dict = {}
+
+    list_trans_pos_list = [] # this is a list of lists
+
+    max_pos_num = 0
+
+    #get max number of elements for pos lists
+    for trans_pos_line in pos_trans_list:
+        trans_pos_line_split = trans_pos_line.split(",")
+
+        if max_pos_num < len(trans_pos_line_split):
+            max_pos_num = len(trans_pos_line_split)
+
+    for trans_pos_line in pos_trans_list:
+        trans_pos_line_split = trans_pos_line.split(",")
+
+        diff_pos = max_pos_num - len(trans_pos_line_split)
+
+        # pad out list so all pos lists have same number of elements
+        for i in xrange(diff_pos):
+            trans_pos_line_split.append(0)
+
+        trans_pos_line_split_str = []
+        for pos_element in trans_pos_line_split:
+            trans_pos_line_split_str.append(str(pos_element))
+
+        new_trans_pos_line = ",".join(trans_pos_line_split_str)
+
+        new_pos_trans_dict[new_trans_pos_line] = pos_trans_dict[trans_pos_line]
+
+        list_trans_pos_list.append(trans_pos_line_split)
+
+    #sort the list by each element
+    i = 0
+
+    list_trans_pos_list.sort(key=lambda x: int(x[i]))
+
+    pos_index = i
+
+    [list_trans_pos_list, sort_flag] = iterate_sort_list(list_trans_pos_list, pos_index)
+
+    if sort_flag != 1:
+        print("Error with sort flag!")
+        print(sort_flag)
+        sys.exit()
+
+    for trans_pos_line_split in list_trans_pos_list:
+        trans_pos_line_split_str = []
+        for pos_element in trans_pos_line_split:
+            trans_pos_line_split_str.append(str(pos_element))
+
+        new_trans_pos_line = ",".join(trans_pos_line_split_str)
+        sorted_trans_list.append(new_trans_pos_line)
+
+
+    return [sorted_trans_list,new_pos_trans_dict]
+
+
+####################################################################################################
+
 def sort_transcripts(trans_obj_list,trans_obj_dict):
     #sort transcripts by start-end-exon starts
     #pad with 0 for numerical sort (prevents 23 from being after 203)
@@ -1463,38 +1618,28 @@ def sort_transcripts(trans_obj_list,trans_obj_dict):
         trans_start = trans_exon_start_list[0]
         trans_end = trans_exon_end_list[-1]
 
-        #max_digit_length = len(str(trans_end))
-        max_digit_length = 10
-        max_pos_line_length = 10000
-        
         trans_pos_list = []
-        
-        trans_start_pad = str(trans_start).rjust(max_digit_length,'0') #pad with 0 on left side
-        trans_end_pad = str(trans_end).rjust(max_digit_length,'0') #pad with 0 on left side
-        
-        
-        trans_pos_list.append("1")
-        trans_pos_list.append(str(trans_start_pad))
-        trans_pos_list.append(str(trans_end_pad))
-        
-        for exon_start in trans_exon_start_list:
-            exon_start_pad = str(exon_start).rjust(max_digit_length,'0') #pad with 0 on left side
-            trans_pos_list.append(exon_start_pad)
-        
-        for exon_end in trans_exon_end_list:
-            exon_end_pad = str(exon_end).rjust(max_digit_length,'0') #pad with 0 on left side
-            trans_pos_list.append(exon_end_pad)
-        
-        trans_pos_line = "".join(trans_pos_list)
-        
-        if len(trans_pos_line) > max_pos_line_length:
-            print("padding for trans pos line is insufficient. Use larger max_pos_line_length")
-            sys.exit()
-            
-        trans_pos_line = trans_pos_line.ljust(max_pos_line_length,'0')
-        
-        trans_pos_line = int(trans_pos_line)
 
+        #trans_pos_list.append(str(trans_start))
+        #trans_pos_list.append(",")
+        #trans_pos_list.append(str(trans_end))
+        #trans_pos_list.append(",")
+
+        num_exons = len(trans_exon_start_list)
+
+        for i in xrange(num_exons):
+            exon_start = trans_exon_start_list[i]
+            trans_pos_list.append(str(exon_start))
+            trans_pos_list.append(",")
+
+            exon_end = trans_exon_end_list[i]
+            trans_pos_list.append(str(exon_end))
+            trans_pos_list.append(",")
+
+        # remove last element because it is a comma
+        trans_pos_list.pop(-1)
+
+        trans_pos_line = "".join(trans_pos_list)
         
         if trans_pos_line in pos_trans_dict:
             old_merge_id = pos_trans_dict[trans_pos_line].trans_id
@@ -1553,13 +1698,14 @@ def sort_transcripts(trans_obj_list,trans_obj_dict):
         #pos_trans_list.append(trans_pos_line)
 
     pos_trans_list = list(pos_trans_dict.keys())
-    pos_trans_list.sort()
+
+    [new_pos_trans_list, new_pos_trans_dict] = sort_pos_trans_list(pos_trans_list, pos_trans_dict)
     
     
     sorted_trans_obj_list = []
-    for pos_trans in pos_trans_list:
+    for pos_trans in new_pos_trans_list:
         
-        trans_obj = pos_trans_dict[pos_trans]
+        trans_obj = new_pos_trans_dict[pos_trans]
         sorted_trans_obj_list.append(trans_obj)
         tmp_id = trans_obj.trans_id
 
