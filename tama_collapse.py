@@ -42,7 +42,7 @@ ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (default 10)')
 ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default no_merge quits when duplicates are found, merge_dup will merge duplicates)')
 ap.add_argument('-sj', type=str, nargs=1, help='Use error threshold to prioritize the use of splice junction information from collapsing transcripts(default no_priority, activate with sj_priority)')
 ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors near splice junctions (default is 10bp)')
-
+ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
 
 
 
@@ -65,6 +65,10 @@ if not opts.x:
     fiveprime_cap_flag = "capped"
 else:
     fiveprime_cap_flag = opts.x[0]
+    
+    if fiveprime_cap_flag != "no_cap":
+        print("Error with cap flag. Should be capped or no_cap.")
+        sys.exit()
 
 if not opts.e:
     print("Default collapse exon ends flag will be used: common_ends")
@@ -119,6 +123,15 @@ if not opts.sjt:
     sj_err_threshold = 10
 else:
     sj_err_threshold = int(opts.sjt[0])
+
+if not opts.log:
+    print("Default log output on")
+    log_flag = "log_on"
+else:
+    log_flag = str(opts.log[0])
+    if log_flag != "log_off":
+        print("Please use log_on or log_off")
+        sys.exit()
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
@@ -948,12 +961,14 @@ class Merged:
     def add_merged_trans(self,trans_obj):
         merged_trans_id = trans_obj.cluster_id
         
-        self.trans_list.append(merged_trans_id)
+        #self.trans_list.append(merged_trans_id)
         self.trans_obj_list.append(trans_obj)
         
         self.merged_trans_dict[merged_trans_id] = trans_obj
         
         merged_trans_id_list = self.merged_trans_dict.keys()
+        self.trans_list = self.merged_trans_dict.keys()
+
         self.num_trans = len(merged_trans_id_list)
         
         if self.num_exons < trans_obj.num_exons:
@@ -1497,6 +1512,8 @@ def sj_error_priority_finder(trans_obj,i,max_exon_num):
 
             else:
                 print("Error with plus strand start and end priority")
+                print(max_exon_num)
+                print(i)
                 sys.exit()
 
 
@@ -1537,7 +1554,10 @@ def sj_error_priority_finder(trans_obj,i,max_exon_num):
 
             else:
                 print("Error with minus strand start and end priority")
+                print(max_exon_num)
+                print(i)
                 sys.exit()
+
     else: # if 1 exon read
         e_start_priority = 0
         e_end_priority = 0
@@ -1630,11 +1650,14 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
             sj_pre_error_list = trans_obj.sj_pre_error_list
             sj_post_error_list = trans_obj.sj_post_error_list
 
-            e_start_priority, e_end_priority, e_start_priority_error,e_end_priority_error = sj_error_priority_finder(trans_obj, i, max_exon_num) ####################################
+            this_max_exon_num = len(e_start_list)
 
             if i >= len(e_start_list):# use for no cap when exon numbers may not match
                 continue
-            
+
+            e_start_priority, e_end_priority, e_start_priority_error,e_end_priority_error = sj_error_priority_finder(trans_obj, i, this_max_exon_num) ####################################
+
+
             e_start = int(e_start_list[j])
             e_end = int(e_end_list[j])
 
@@ -1661,9 +1684,11 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
                 
                 priority_error_start_dict[e_start_priority][e_start][e_start_priority_error] = 1
             else:
-                e_start_dict[e_start_priority] = {}
+                if log_flag == "log_on":
+                    print("truncated transcript")
+                #e_start_dict[e_start_priority] = {}
                 
-                priority_error_start_dict[e_start_priority] = {}
+                #priority_error_start_dict[e_start_priority] = {}
 
 
             
@@ -1681,9 +1706,11 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
                 
                 priority_error_end_dict[e_end_priority][e_end][e_end_priority_error] = 1
             else:
-                e_end_dict[e_end_priority] = {}
+                if log_flag == "log_on":
+                    print("truncated transcript")
+                #e_end_dict[e_end_priority] = {}
                 
-                priority_error_end_dict[e_end_priority] = {}
+                #priority_error_end_dict[e_end_priority] = {}
 
         ##########################################
 
@@ -1733,7 +1760,8 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         if num_most_starts > 1:
             best_e_start = most_long_e_start
             if num_trans > 2:
-                print("more than one best e start! " + str(best_e_start) + " num_trans: " + str(num_trans))
+                if log_flag == "log_on":
+                    print("more than one best e start! " + str(best_e_start) + " num_trans: " + str(num_trans))
         ##########################################
 
         e_start_range_list.sort()
@@ -1774,7 +1802,8 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         if num_most_ends > 1:
             best_e_end = most_long_e_end
             if num_trans > 2:
-                print("more than one best e end! " + str(best_e_end) + " num_trans: " + str(num_trans))
+                if log_flag == "log_on":
+                    print("more than one best e end! " + str(best_e_end) + " num_trans: " + str(num_trans))
         ##########################################
 
         e_end_range_list.sort()
@@ -1819,6 +1848,22 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
         collapse_start_list.append(best_e_start)
         collapse_end_list.append(best_e_end)
         
+        ##########################################################
+        ###debugging
+#        print("debugging ==================")
+#        print(best_e_start)
+#        print(best_e_end)
+#        print(best_start_priority)
+#        print(long_e_start)
+#        print(most_long_e_start)
+#        print(i)
+#        print(max_exon_num)
+#        print(priority_error_start_dict)
+#        print(strand)
+#        print(trans_obj_list)
+#        print("debugging ==================")
+        
+        ##########################################################
         priority_error_start_list = list(priority_error_start_dict[best_start_priority][best_e_start].keys()) ###########################################################################
         priority_error_end_list = list(priority_error_end_dict[best_end_priority][best_e_end].keys())
         
@@ -2237,31 +2282,44 @@ def sort_transcripts(trans_obj_list):
 
         trans_pos_line = "".join(trans_pos_list)
 
-        
+        dup_detect_flag = 0 # use for signaling that a duplicate has been detected
+
+        #if this trans model is already present in the dict then this is a duplicate
         if trans_pos_line in pos_trans_dict:
+
+            dup_detect_flag = 1
+
             old_merge_id = pos_trans_dict[trans_pos_line].trans_id
             new_merge_id = trans_obj.trans_id
             
-            old_trans_list = pos_trans_dict[trans_pos_line].trans_list
-            new_trans_list = trans_obj.trans_list            
+            #old_trans_list = pos_trans_dict[trans_pos_line].trans_list
+            #new_trans_list = trans_obj.trans_list
 
-            print("Duplicate transcript positions in transcript sorting!")
-            print(trans_obj.merged_trans_dict.keys())
-            print(str(trans_start)+" "+str(trans_end))
-            print(pos_trans_dict[trans_pos_line].merged_trans_dict.keys())
+            if log_flag == "log_on":
+
+                print("Duplicate transcript positions in transcript sorting!")
+                print(trans_obj.merged_trans_dict.keys())
+                print(str(trans_start)+" "+str(trans_end))
+                print(pos_trans_dict[trans_pos_line].merged_trans_dict.keys())
             this_bed_line = trans_obj.format_bed_line()
             other_bed_line = pos_trans_dict[trans_pos_line].format_bed_line()
-            print(this_bed_line)
-            print(other_bed_line)
-            print("a###########################################")
+
+            if log_flag == "log_on":
+                print(this_bed_line)
+                print(other_bed_line)
+                print("a###########################################")
             for a_uniq_trans_id in trans_obj.merged_trans_dict:
                 a_bed_line = trans_obj_dict[a_uniq_trans_id].format_bed_line(a_uniq_trans_id)
-                print(a_bed_line)
-            print("b###########################################")
+                if log_flag == "log_on":
+                    print(a_bed_line)
+            if log_flag == "log_on":
+                print("b###########################################")
             for b_uniq_trans_id in pos_trans_dict[trans_pos_line].merged_trans_dict:
                 b_bed_line = trans_obj_dict[b_uniq_trans_id].format_bed_line(b_uniq_trans_id)
-                print(b_bed_line)
-            print("end duplicate###########################################")
+                if log_flag == "log_on":
+                    print(b_bed_line)
+            if log_flag == "log_on":
+                print("end duplicate###########################################")
 
             #sys.exit()
             
@@ -2299,10 +2357,16 @@ def sort_transcripts(trans_obj_list):
                 sys.exit()
             #################################################################################
             #################################################################################
-        
-        pos_trans_dict[trans_pos_line] = trans_obj
-        pos_trans_list.append(trans_pos_line)
-    
+
+        if dup_detect_flag == 0:
+            pos_trans_dict[trans_pos_line] = trans_obj
+            pos_trans_list.append(trans_pos_line)
+        elif dup_detect_flag == 1:
+            pos_trans_dict[trans_pos_line] = trans_obj
+        else:
+            print("Error with dup_detect_flag.")
+            sys.exit()
+
     [new_pos_trans_list,new_pos_trans_dict] = sort_pos_trans_list(pos_trans_list, pos_trans_dict)
     
     sorted_trans_obj_list = []
@@ -2493,7 +2557,9 @@ class TransGroup:
         self.trans_group_dict.pop(trans_a,None)
     
     def new_group_a(self,trans_a):
-        print("invoke new_group_a " + str(self.group_count) + " newgroup " + trans_a)
+
+        if log_flag == "log_on":
+            print("invoke new_group_a " + str(self.group_count) + " newgroup " + trans_a)
         self.group_count += 1
         if trans_a in self.trans_group_dict:
             print("Error in new group, trans_a already in group")
@@ -2516,12 +2582,14 @@ class TransGroup:
 ##############################################################################
 
     def add_a_to_b_group(self,trans_a,trans_b):
-        print("invoke add_a_to_b_group " + trans_a + " " + trans_b)
+        if log_flag == "log_on":
+            print("invoke add_a_to_b_group " + trans_a + " " + trans_b)
         # only cap libs should be used for b group and they only have one group
         # does not take all of a_group just uses a_trans
         if len(list(self.trans_group_dict[trans_b].keys())) > 1:
-            print("multiple groups")
-            #sys.exit()
+            if log_flag == "log_on":
+                print("multiple groups")
+                #sys.exit()
 
         #check that trans b has more exons than trans a
         trans_obj_a = trans_obj_dict[trans_a]
@@ -2536,7 +2604,8 @@ class TransGroup:
         #remove initial nocap group that is a self identity group
         if len(list(self.trans_group_dict[trans_a].keys())) == 1:# if only one group
             a_trans_group = list(self.trans_group_dict[trans_a].keys())[0]
-            print(trans_a)
+            if log_flag == "log_on":
+                print(trans_a)
             if len(list(self.group_trans_dict[a_trans_group].keys())) == 1: #if only this in one group
                 if list(self.group_trans_dict[a_trans_group].keys())[0] == trans_a:
                     self.group_trans_dict.pop(a_trans_group,None)
@@ -2547,7 +2616,8 @@ class TransGroup:
             
         else:
             # this happens if trans_a is a nocap trans in which case it can be in multiple groups
-            print("trans_a already in group, should be nocap trans: " + trans_a)
+            if log_flag == "log_on":
+                print("trans_a already in group, should be nocap trans: " + trans_a)
         
 
         for b_group_num in list(self.trans_group_dict[trans_b].keys()):
@@ -2562,8 +2632,9 @@ class TransGroup:
             for a_group_num in list(self.trans_group_dict[trans_a].keys()):
                 if a_group_num == b_group_num:
                     continue
-                
-                print(str(a_group_num) + "-a and b group num-" + str(b_group_num))
+
+                if log_flag == "log_on":
+                    print(str(a_group_num) + "-a and b group num-" + str(b_group_num))
                 # if trans_a is the longest in group
                 #add all shorter transcripts from a group to b group too
                 if trans_a in self.group_longest_dict[a_group_num]["longest"]:
@@ -2581,7 +2652,8 @@ class TransGroup:
 ##############################################################################
 
     def merge_a_b_groups(self,trans_a,trans_b):
-        print("invoke merge_a_b_groups "+ str(self.group_count )+ " " + trans_a + " " +trans_b )
+        if log_flag == "log_on":
+            print("invoke merge_a_b_groups "+ str(self.group_count )+ " " + trans_a + " " +trans_b )
         
         #self.group_count += 1
         #only cap lib trans should be used for merging groups
@@ -2653,13 +2725,17 @@ class TransGroup:
         # need to create new group and cant use time saving thing in capped merge
         # this is because nocaps can have multiple groups
         self.group_count += 1
-        print("invoke merge_a_b_groups_nocap " + str(self.group_count )+ " " + trans_a + " " +trans_b )
+
+        if log_flag == "log_on":
+            print("invoke merge_a_b_groups_nocap " + str(self.group_count )+ " " + trans_a + " " +trans_b )
         #only cap lib trans should be used for merging groups
         if len(list(self.trans_group_dict[trans_a].keys())) > 1:
-            print("multiple groups a nocap")
+            if log_flag == "log_on":
+                print("multiple groups a nocap")
 
         if len(list(self.trans_group_dict[trans_b].keys())) > 1:
-            print("multiple groups b nocap")
+            if log_flag == "log_on":
+                print("multiple groups b nocap")
 
         #check that trans b has same num exons as trans a
         trans_obj_a = trans_obj_dict[trans_a]
@@ -2739,7 +2815,8 @@ class TransGroup:
 
 def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through transcripts in gene and groups transcripts for collapsing
     #for capped only!!
-    print("invoking simplify_gene_capped")
+    if log_flag == "log_on":
+        print("invoking simplify_gene_capped")
     
     transgroup = TransGroup("transgroup")
     
@@ -2815,7 +2892,8 @@ def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through tran
 
 def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through transcripts in gene and groups transcripts for collapsing
     # For nocap only!
-    print("invoking simplify_gene_nocap")
+    if log_flag == "log_on":
+        print("invoking simplify_gene_nocap")
     
     transgroup = TransGroup("transgroup")
     
@@ -2940,9 +3018,10 @@ def detect_polya(trans_obj,a_window): # looks for a stretch of poly A in the gen
         downstream_seq = fasta_dict[scaffold][trans_end:trans_end+a_window]
         dseq_length = len(downstream_seq)
         if dseq_length == 0:
-            print("dseq_length == 0")
-            print(trans_obj.trans_id)
-            print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos) + " " + strand)
+            if log_flag == "log_on":
+                print("dseq_length == 0")
+                print(trans_obj.trans_id)
+                print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos) + " " + strand)
             dseq_length = 1
         a_count = downstream_seq.count("A")
         n_count = downstream_seq.count("N")
@@ -2952,9 +3031,10 @@ def detect_polya(trans_obj,a_window): # looks for a stretch of poly A in the gen
         trans_end = trans_obj.start_pos
         a_window_start = trans_end-a_window
         if a_window_start < 0:
-            print("Window start less than 0")
-            print(trans_obj.trans_id)
-            print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos)+ " " + strand)
+            if log_flag == "log_on":
+                print("Window start less than 0")
+                print(trans_obj.trans_id)
+                print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos)+ " " + strand)
             a_window_start = 0
         downstream_seq = fasta_dict[scaffold][a_window_start:trans_end]
         rev_comp_seq = reverse_complement(downstream_seq)
@@ -2962,9 +3042,11 @@ def detect_polya(trans_obj,a_window): # looks for a stretch of poly A in the gen
         
         dseq_length = len(downstream_seq)
         if dseq_length == 0:
-            print("dseq_length == 0")
-            print(trans_obj.trans_id)
-            print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos)+ " " + strand)
+
+            if log_flag == "log_on":
+                print("dseq_length == 0")
+                print(trans_obj.trans_id)
+                print(scaffold + " " + str(trans_obj.start_pos) + " " +  str(trans_obj.end_pos)+ " " + strand)
             dseq_length = 1
         
         a_count = downstream_seq.count("A")
