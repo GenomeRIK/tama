@@ -66,7 +66,7 @@ if not opts.x:
 else:
     fiveprime_cap_flag = opts.x[0]
     
-    if fiveprime_cap_flag != "no_cap":
+    if fiveprime_cap_flag != "no_cap" and fiveprime_cap_flag != "capped":
         print("Error with cap flag. Should be capped or no_cap.")
         sys.exit()
 
@@ -3146,6 +3146,10 @@ sam_flag_dict = {} #sam_flag_dict[flag number] = meaning
 sam_flag_dict[0] = "forward_strand"
 sam_flag_dict[4] = "unmapped"
 sam_flag_dict[16] = "reverse_strand"
+sam_flag_dict[2048] = "not_primary"
+sam_flag_dict[2064] = "not_primary"
+sam_flag_dict[256] = "not_primary"
+sam_flag_dict[272] = "not_primary"
 
 unmapped_dict = {} # unmapped_dict[cluster id] = 1
 
@@ -3223,7 +3227,7 @@ with open(sam_file) as sam_file_contents:
         # Above: Check sam and gmap strand info!!!
         ####################################
         
-        if mapped_flag == "unmapped":
+        if mapped_flag == "unmapped" or mapped_flag == "not_primary":
             unmapped_dict[read_id] = 1
             accept_flag = "NA"
             percent_coverage = "NA"
