@@ -2,7 +2,7 @@ import re
 import sys
 import time
 from Bio import SeqIO
-
+import argparse
 
 
 #
@@ -15,6 +15,36 @@ from Bio import SeqIO
 # The counts starting from M and ending in stop codon
 # If no stop codon is found the reading frame is not reported (due to poly A tail selection)
 #
+
+#####################################################################
+#####################################################################
+
+ap = argparse.ArgumentParser(description='This script finds open reading frames from transcript sequences')
+
+ap.add_argument('-f', type=str, nargs=1, help='Fasta file (required)')
+ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
+
+
+opts = ap.parse_args()
+
+#check for missing args
+missing_arg_flag = 0
+
+if not opts.f:
+    print("Fasta file missing")
+    missing_arg_flag = 1
+if not opts.o:
+    print("Output name missing")
+    missing_arg_flag = 1
+
+if missing_arg_flag == 1:
+    print("Please try again with complete arguments")
+
+fasta_file = opts.f[0]
+outfile_name = opts.o[0]
+
+outfile = open(outfile_name,"w")
+
 
 amino_dict = {} #amino_dict[GCA] = A letter amino acid code
 
@@ -103,12 +133,6 @@ amino_dict["AGC"] = "S"
 amino_dict["AGA"] = "R"
 amino_dict["AGG"] = "R"
 
-print("opening fasta file")
-fasta_file = sys.argv[1]
-#fasta_file_contents = open(fasta_file).read().rstrip("\n").split("\n")
-
-outfile_name = sys.argv[2]
-outfile = open(outfile_name,"w")
 
 
 class Orf:

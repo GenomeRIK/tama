@@ -2,7 +2,7 @@ import re
 import sys
 import time
 from Bio import SeqIO
-
+import argparse
 
 
 #
@@ -11,11 +11,36 @@ from Bio import SeqIO
 #
 
 
+
+ap = argparse.ArgumentParser(description='This script parses information from the default output of blastp')
+
+ap.add_argument('-b', type=str, nargs=1, help='blastp file (required)')
+ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
+
+
+opts = ap.parse_args()
+
+#check for missing args
+missing_arg_flag = 0
+
+if not opts.b:
+    print("blastp file missing")
+    missing_arg_flag = 1
+if not opts.o:
+    print("output name missing")
+    missing_arg_flag = 1
+
+if missing_arg_flag == 1:
+    print("Please try again with complete arguments")
+
+blastp_file = opts.b[0]
+outfile_name = opts.o[0]
+
 print("opening blastp file")
-blastp_file = sys.argv[1]
+#blastp_file = sys.argv[1]
 blastp_file_contents = open(blastp_file).read().rstrip("\n").split("\n")
 
-outfile_name = sys.argv[2]
+#outfile_name = sys.argv[2]
 outfile = open(outfile_name,"w")
 
 
@@ -154,7 +179,7 @@ for line in blastp_file_contents:
         passed_headers_flag = 1
         split_header_flag = 0
 
-        print(q_name)
+        #print(q_name)
 
         if "missing_nucleotides" in q_name:
             q_name = query_line + line
@@ -188,7 +213,8 @@ for line in blastp_file_contents:
             passed_headers_flag = 0
             split_header_flag = 1
             query_line = q_name
-            print(query_line)
+            
+            #print(query_line)
 
 
 
@@ -287,14 +313,14 @@ for trans_id in trans_id_list:
         #>G1;G1.4::1:2350-3116(+):F2:1:74:74:E
 
 
-        print(q_name)
+        #print(q_name)
         q_rel_start = int(q_name_split[-4])
         q_rel_end = int(q_name_split[-3])
 
         q_nuc_start = int(q_name_split[-6])
         q_nuc_end = int(q_name_split[-5])
         
-        print(q_name)
+        #print(q_name)
 
         for s_obj in query_dict[q_name]:
             #print(s_obj.s_name +  "\t" + str(s_obj.s_align_len) + "\t" + str(s_obj.s_len))

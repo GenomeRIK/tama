@@ -2,7 +2,7 @@ import re
 import sys
 import time
 from Bio import SeqIO
-
+import argparse
 
 
 #
@@ -11,20 +11,54 @@ from Bio import SeqIO
 #
 
 
+ap = argparse.ArgumentParser(description='This script uses data from the blastp parse file and the original annotation to assign the locations of the UTR/CDS regions to the bed file')
+
+ap.add_argument('-p', type=str, nargs=1, help='Blastp parse file (required)')
+ap.add_argument('-a', type=str, nargs=1, help='Annotation bed file (required)')
+ap.add_argument('-f', type=str, nargs=1, help='Fasta for annotation file (required)')
+ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
+
+
+opts = ap.parse_args()
+
+#check for missing args
+missing_arg_flag = 0
+
+if not opts.p:
+    print("Blastp parse file missing")
+    missing_arg_flag = 1
+if not opts.a:
+    print("Annotation bed file missing")
+    missing_arg_flag = 1
+if not opts.f:
+    print("Fasta file missing")
+    missing_arg_flag = 1
+if not opts.o:
+    print("output name missing")
+    missing_arg_flag = 1
+
+if missing_arg_flag == 1:
+    print("Please try again with complete arguments")
+
+parse_file = opts.p[0]
+pbri_file = opts.a[0]
+fasta_file = opts.f[0]
+outfile_name = opts.o[0]
+
 print("opening blastp parse file")
-parse_file = sys.argv[1]
+#parse_file = sys.argv[1]
 parse_file_contents = open(parse_file).read().rstrip("\n").split("\n")
 
-print("opening pbri anno file")
-pbri_file = sys.argv[2]
+print("opening anno file")
+#pbri_file = sys.argv[2]
 pbri_file_contents = open(pbri_file).read().rstrip("\n").split("\n")
 
 
-print("opening pbri fasta file")
-fasta_file = sys.argv[3]
+#print("opening pbri fasta file")
+#fasta_file = sys.argv[3]
 #fasta_file_contents = open(fasta_file).read().rstrip("\n").split("\n")
 
-outfile_name = sys.argv[4]
+#outfile_name = sys.argv[4]
 outfile = open(outfile_name,"w")
 
 trans_dict = {} # trans_dict[trans_id] = trans line list

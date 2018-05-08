@@ -4,21 +4,50 @@ import time
 from Bio import SeqIO
 
 import os
+import argparse
 
 
 #This script takes a bed file with cds information and creates a bed file with only cds regions
 # Use this to get CDS sequence using bedtools getfasta
 
+ap = argparse.ArgumentParser(description='This script takes a bed file with cds information and creates a bed file with only cds regions')
 
+ap.add_argument('-b', type=str, nargs=1, help='Bed file (required)')
+ap.add_argument('-s', type=str, nargs=1, help='Stop codon include flag (required)')
+ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
+
+
+opts = ap.parse_args()
+
+#check for missing args
+missing_arg_flag = 0
+
+
+if not opts.b:
+    print("Annotation bed file missing")
+    missing_arg_flag = 1
+if not opts.s:
+    print("Stop codon include flag missing")
+    missing_arg_flag = 1
+if not opts.o:
+    print("output name missing")
+    missing_arg_flag = 1
+
+if missing_arg_flag == 1:
+    print("Please try again with complete arguments")
+
+bed_file = opts.b[0]
+stop_codon_flag = opts.s[0]
+outfile_name = opts.o[0]
 
 print("opening bed file")
-bed_file = sys.argv[1]
+#bed_file = sys.argv[1]
 bed_file_contents = open(bed_file).read().rstrip("\n").split("\n")
 
 
-stop_codon_flag = sys.argv[2] # either include_stop or exclude_stop
+#stop_codon_flag = sys.argv[2] # either include_stop or exclude_stop
 
-outfile_name = sys.argv[3]
+#outfile_name = sys.argv[3]
 outfile = open(outfile_name,"w")
 
 
