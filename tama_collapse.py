@@ -3209,7 +3209,7 @@ with open(sam_file) as sam_file_contents:
         #Check sam and gmap strand info!!!
         #get strand information from gmap flag
 
-	xs_flag = "na"
+        xs_flag = "na"
         for field in line_split:
             if "XS:A:" in field:
                 xs_flag = field.split(":")[-1]
