@@ -1582,7 +1582,7 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
     try:
         collapse_flag
     except NameError:
-        print "collapse_flag not defined, using default of most commond ends"
+        print("collapse_flag not defined, using default of most commond ends")
         collapse_flag == "common_ends"
     
     max_exon_num = 0
