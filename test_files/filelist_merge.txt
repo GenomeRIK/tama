@@ -1,0 +1,1 @@
+tama_collapse_test.bed	capped	1,1,1	testmerge

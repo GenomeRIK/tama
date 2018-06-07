@@ -1,0 +1,1 @@
+test_isoseq	tama_collapse_test	capped	gmap_test.sam	/exports/cmvm/eddie/eb/groups/burt_chicken_isoseq/misc_analysis/5_tama_example/
