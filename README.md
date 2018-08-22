@@ -1,6 +1,7 @@
 # tama
 Transcriptome Annotation by Modular Algorithms
 
+This software was designed for processing Iso-Seq data and other long read transcriptome data. 
 
 See wiki for manual:
 https://github.com/GenomeRIK/tama/wiki
