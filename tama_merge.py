@@ -2585,6 +2585,12 @@ def process_trans_group(trans_line_list, total_gene_count):
 for file_line in filelist_file_contents:
     file_line_split = file_line.split("\t")
     
+    if len(file_line_split) != 4:
+        print("Error with " + filelist_file )
+        print(file_line)
+        print("Please make sure it is tab separated with no empty lines")
+        sys.exit()
+    
     filename = file_line_split[0]
     seq_type = file_line_split[1]
     priority_rank = file_line_split[2]
