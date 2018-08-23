@@ -2391,6 +2391,15 @@ def process_trans_group(trans_line_list, total_gene_count):
         trans_line = "\t".join(trans_line_split)
         id_line = trans_line_split[3]
         id_line_split = id_line.split(";")
+        
+        if len(id_line_split) < 2:
+            print("Error with bed file ID field")
+            print(trans_line_list)
+            print("bed12 files must have the gene ID's and transcript ID's formatted as such \"gene_id;transcript_id\" in the 4th column.")
+            print("The gene ID must be the first subfield and the subfields must be delimited with a semicolon (;).")
+            sys.exit()
+            
+        
         gene_id = id_line_split[0]
         trans_id = id_line_split[1]
          
@@ -2615,6 +2624,17 @@ for file_line in filelist_file_contents:
         trans_start = int(line_split[1])
         trans_end = int(line_split[2])
         id_line = line_split[3]
+        
+        id_line_split = id_line.split(";")
+        
+        if len(id_line_split) < 2:
+            print("Error with bed file ID field")
+            print(filename)
+            print(line)
+            print("bed12 files must have the gene ID's and transcript ID's formatted as such \"gene_id;transcript_id\" in the 4th column.")
+            print("The gene ID must be the first subfield and the subfields must be delimited with a semicolon (;).")
+            sys.exit()
+        
         strand = line_split[5]
         num_exon = int(line_split[9])
         block_size_list = line_split[10].split(",")
