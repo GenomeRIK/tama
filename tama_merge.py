@@ -2721,8 +2721,5 @@ for scaffold in scaff_list:
             
     
 
-
-        
-
-    
+print("TAMA Merge has completed successfully!")
     

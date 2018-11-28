@@ -39,9 +39,12 @@ ap.add_argument('-i', type=str, nargs=1, help='Identity (default 85)')
 ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (default 10)')
 ap.add_argument('-m', type=str, nargs=1, help='Exon/Splice junction threshold (default 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (default 10)')
-ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default no_merge quits when duplicates are found, merge_dup will merge duplicates)')
+ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transcript groups (default is merge_dup will merge duplicates ,no_merge quits when duplicates are found)')
 ap.add_argument('-sj', type=str, nargs=1, help='Use error threshold to prioritize the use of splice junction information from collapsing transcripts(default no_priority, activate with sj_priority)')
 ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors near splice junctions (default is 10bp)')
+ap.add_argument('-lde', type=str, nargs=1, help='Threshold for amount of local density error near splice junctions that is allowed (default is 1000 errors which practically means no threshold is applied)')
+ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this to pick the symbol used to represent matches in the simple error string for LDE output.')
+
 ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
 
 
@@ -107,8 +110,8 @@ else:
     threeprime_threshold = int(opts.z[0])
     
 if not opts.d:
-    print("Default duplicate merge flag: no_merge")
-    duplicate_flag = "no_merge"
+    print("Default duplicate merge flag: merge_dup")
+    duplicate_flag = "merge_dup"
 else:
     duplicate_flag = str(opts.d[0])
 
@@ -123,6 +126,18 @@ if not opts.sjt:
     sj_err_threshold = 10
 else:
     sj_err_threshold = int(opts.sjt[0])
+    
+if not opts.lde:
+    print("Default splice junction local density error threshold: 1000")
+    lde_threshold = 1000
+else:
+    lde_threshold = int(opts.lde[0])
+
+if not opts.ses:
+    print("Default simple error symbol for matches is the underscore \"_\" .")
+    ses_match_char = "_"
+else:
+    ses_match_char = int(opts.ses[0])
 
 if not opts.log:
     print("Default log output on")
@@ -181,6 +196,7 @@ outfile_cluster.write("\n")
 trans_report_outfile_name = outfile_prefix + "_trans_report.txt"
 outfile_trans_report = open(trans_report_outfile_name,"w")
 trans_report_line = "\t".join(["transcript_id","num_clusters","high_coverage","low_coverage","high_quality_percent","low_quality_percent","start_wobble_list","end_wobble_list","collapse_sj_start_err","collapse_sj_end_err","collapse_error_nuc"])
+#trans_report_line = "\t".join(["transcript_id","num_clusters","high_coverage","low_coverage","high_quality_percent","low_quality_percent","start_wobble_list","end_wobble_list","collapse_sj_start_err","collapse_sj_end_err","collapse_error_nuc","sj_error_simple"])
 outfile_trans_report.write(trans_report_line)
 outfile_trans_report.write("\n")
 
@@ -221,6 +237,12 @@ strand_file_line = "\t".join(["read_id","scaff_name","start_pos","cigar","strand
 outfile_strand.write(strand_file_line)
 outfile_strand.write("\n")
 
+
+lde_outfile_name = outfile_prefix + "_local_density_error.txt"
+outfile_lde = open(lde_outfile_name,"w")
+lde_file_line = "\t".join(["cluster_id","lde_flag","scaff_name","start_pos","end_pos","strand","num_exons","bad_sj_num_line","bad_sj_error_count_line","sj_error_profile_idmsh","sj_error_nuc","sj_error_simple","cigar"])
+outfile_lde.write(lde_file_line)
+outfile_lde.write("\n")
 
 variation_dict = {} # variation_dict[scaffold][position][variant type][alt allele][cluster id] = 1
 var_coverage_dict = {} # var_coverage_dict[scaffold][position][trans_id] = 1
@@ -330,11 +352,84 @@ def trans_coordinates(start_pos,cigar):
 
 ####################################################################################################
 
+#deal with wildcards
+
+nuc_char_dict = {} # nuc_char_dict[nuc char][nuc single] = 1
+
+nuc_char_dict["A"] = {}
+nuc_char_dict["A"]["A"] = 1
+
+nuc_char_dict["T"] = {}
+nuc_char_dict["T"]["T"] = 1
+
+nuc_char_dict["C"] = {}
+nuc_char_dict["C"]["C"] = 1
+
+nuc_char_dict["G"] = {}
+nuc_char_dict["G"]["G"] = 1
+
+nuc_char_dict["S"] = {}
+nuc_char_dict["S"]["C"] = 1
+nuc_char_dict["S"]["G"] = 1
+
+nuc_char_dict["W"] = {}
+nuc_char_dict["W"]["A"] = 1
+nuc_char_dict["W"]["T"] = 1
+
+nuc_char_dict["K"] = {}
+nuc_char_dict["K"]["A"] = 1
+nuc_char_dict["K"]["C"] = 1
+
+nuc_char_dict["M"] = {}
+nuc_char_dict["M"]["G"] = 1
+nuc_char_dict["M"]["T"] = 1
+
+nuc_char_dict["Y"] = {}
+nuc_char_dict["Y"]["A"] = 1
+nuc_char_dict["Y"]["G"] = 1
+
+nuc_char_dict["R"] = {}
+nuc_char_dict["R"]["C"] = 1
+nuc_char_dict["R"]["T"] = 1
+
+nuc_char_dict["V"] = {}
+nuc_char_dict["V"]["C"] = 1
+nuc_char_dict["V"]["G"] = 1
+nuc_char_dict["V"]["T"] = 1
+
+nuc_char_dict["H"] = {}
+nuc_char_dict["H"]["A"] = 1
+nuc_char_dict["H"]["G"] = 1
+nuc_char_dict["H"]["T"] = 1
+
+nuc_char_dict["D"] = {}
+nuc_char_dict["D"]["A"] = 1
+nuc_char_dict["D"]["C"] = 1
+nuc_char_dict["D"]["T"] = 1
+
+nuc_char_dict["B"] = {}
+nuc_char_dict["B"]["A"] = 1
+nuc_char_dict["B"]["C"] = 1
+nuc_char_dict["B"]["G"] = 1
+
+nuc_char_dict["N"] = {}
+nuc_char_dict["N"]["A"] = 1
+nuc_char_dict["N"]["T"] = 1
+nuc_char_dict["N"]["C"] = 1
+nuc_char_dict["N"]["G"] = 1
+#nuc_char_dict["Z"] = {}
+
+
+
 #use this to find mismatch between two aligned sequences
 def mismatch_seq(genome_seq,query_seq,genome_pos,seq_pos):
     
     if len(genome_seq) != len(query_seq):
         print("Genome seq is not the same length as query seq")
+        print(genome_seq)
+        print(query_seq)
+        print(genome_pos)
+        print(seq_pos)
         
         sys.exit()
     
@@ -343,7 +438,19 @@ def mismatch_seq(genome_seq,query_seq,genome_pos,seq_pos):
     nuc_mismatch_list = []
     
     for i in xrange(len(genome_seq)):
-        if genome_seq[i] != query_seq[i]:
+
+        genome_nuc = genome_seq[i]
+        read_nuc = query_seq[i]
+
+        nuc_match_flag = 0
+        for g_nuc_char in nuc_char_dict[genome_nuc]:
+            for t_nuc_char in nuc_char_dict[read_nuc]:
+                if g_nuc_char == t_nuc_char:
+                    nuc_match_flag = 1
+
+
+        #if genome_seq[i] != query_seq[i]: #########################################need to fix this for wildcard situations
+        if nuc_match_flag == 0:
             genome_mismatch_coord = genome_pos + i
             seq_mismatch_coord = seq_pos + i
             genome_mismatch_list.append(genome_mismatch_coord)
@@ -416,6 +523,8 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
     for i in xrange(len(cig_dig_list)):
         cig_flag = cig_char_list[i]
         
+        #print(seq_pos)
+        
         if cig_flag == "H":
             h_count = h_count + int(cig_dig_list[i])
             
@@ -460,7 +569,10 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             seq_diff = seq_end - seq_start
             gen_diff = genome_end - genome_start
 
-            
+            ######################################################
+            #print(str(match_length)+cig_flag)
+            ######################################################
+
             #get number and location of mis matches
             genome_mismatch_list,seq_mismatch_list,nuc_mismatch_list = mismatch_seq(genome_slice,seq_slice,genome_start,seq_start)
             
@@ -519,8 +631,8 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             continue
         elif cig_flag == "N":
 
-            sj_pre_error_builder_list = []
-            sj_post_error_builder_list = []
+            sj_pre_error_builder_list = [] # list of cigar string before splice junctions
+            sj_post_error_builder_list = [] # list of cigar string after splice junctions
 
 
             # check for errors before splice junction pre
@@ -541,7 +653,9 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             
             this_cig_genome_pos = genome_pos
 
-            while prev_total_mismatch_length <= sj_err_threshold:
+            prev_sj_flag = 0
+
+            while prev_total_mismatch_length <= sj_err_threshold and prev_sj_flag == 0:
                 this_mismatch_length = this_mismatch_length + prev_cig_length
                 prev_total_mismatch_length = this_mismatch_length
 
@@ -558,13 +672,14 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
                         last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
 
                         dist_prev_mismatch = genome_pos - last_genome_mismatch
-                        
+
                         m_builder_add_count = 0 
 
                         #while dist_prev_mismatch <= this_mismatch_length and dist_prev_mismatch <= sj_err_threshold:
                         while last_genome_mismatch >= this_cig_genome_pos - prev_cig_length and last_genome_mismatch <= this_cig_genome_pos and dist_prev_mismatch <= sj_err_threshold: # dist_prev_mismatch is still in range of sj threshold
 
                             sj_pre_error_builder_list.append(str(dist_prev_mismatch) + "." + last_nuc_mismatch)
+
                             m_builder_add_count += 1
 
                             all_genome_mismatch_index -= 1
@@ -572,6 +687,8 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
                             last_genome_mismatch = all_genome_mismatch_list[all_genome_mismatch_index]
                             last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
                             dist_prev_mismatch = genome_pos - last_genome_mismatch
+
+
 
                             if all_genome_mismatch_index < 0:
                                 break
@@ -595,6 +712,9 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
                     prev_cig_length = int(cig_dig_list[prev_cig_index])
 
                     sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                elif prev_cig_flag == "N":
+                    prev_sj_flag = 1
 
                 prev_cig_index -= 1
 
@@ -637,7 +757,10 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             this_next_seq_pos = seq_pos
             this_genome_pos = genome_pos
 
-            while next_total_mismatch_length <= sj_err_threshold:
+            #genome_mismatch_index = 0
+            next_sj_flag = 0
+
+            while next_total_mismatch_length <= sj_err_threshold and next_sj_flag == 0:
                 this_mismatch_length = this_mismatch_length + next_cig_length
                 next_total_mismatch_length = this_mismatch_length
 
@@ -652,13 +775,19 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
                     seq_slice = seq_list[seq_start:seq_end]
                     genome_slice = fasta_dict[scaffold][genome_start:genome_end]
 
+                    #######################################################
+                    #print(str(match_length)+next_cig_flag)
+                    #print(seq_start)
+                    #print(seq_end)
+                    ######################################################
+
                     genome_mismatch_list, seq_mismatch_list, nuc_mismatch_list = mismatch_seq(genome_slice, seq_slice, genome_start, seq_start)
 
                     genome_mismatch_index = 0
 
                     # if no mismatch
                     if len(genome_mismatch_list) < 1: # no mismatch in this cig entry
-                        dist_next_mismatch = 2 * sj_err_threshold
+                        #dist_next_mismatch = 2 * sj_err_threshold
 
                         if next_total_mismatch_length <= sj_err_threshold:
 
@@ -666,19 +795,24 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
 
                     elif genome_mismatch_index <= len(genome_mismatch_list):
                         nuc_next_mismatch = nuc_mismatch_list[0]
-                        dist_next_mismatch = genome_mismatch_list[0] - this_genome_pos
-                        
+                        #dist_next_mismatch = genome_mismatch_list[0] - this_genome_pos
+                        dist_next_mismatch = genome_mismatch_list[0] - genome_pos
+
                         m_builder_add_count = 0 
 
                         while dist_next_mismatch <= this_mismatch_length and dist_next_mismatch < sj_err_threshold:
                             next_genome_mismatch = genome_mismatch_list[genome_mismatch_index]
                             next_nuc_mismatch = nuc_mismatch_list[genome_mismatch_index]
 
-                            dist_next_mismatch = next_genome_mismatch - this_genome_pos
+                            #dist_next_mismatch = next_genome_mismatch - this_genome_pos
+                            dist_next_mismatch = next_genome_mismatch - genome_pos
 
                             if dist_next_mismatch <= sj_err_threshold: # this mismatch goes beyond this M length
+
                                 sj_post_error_builder_list.append(str(dist_next_mismatch) + "." + next_nuc_mismatch)
+
                                 m_builder_add_count += 1
+
 
                             genome_mismatch_index += 1
                             if genome_mismatch_index >= len(genome_mismatch_list):
@@ -698,6 +832,9 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
                     next_cig_length = int(cig_dig_list[next_cig_index])
 
                     sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+                elif next_cig_flag == "N":
+                    next_sj_flag = 1
+
 
 
                 if next_cig_flag != "D": # increase this seq pos only if not a deletion
@@ -738,6 +875,15 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
 
 
             continue
+
+        else:
+            match_length = int(cig_dig_list[i])
+
+            print("Error with cigar flag")
+            print(str(match_length) + cig_flag)
+            print(cig_dig_list)
+            print(cig_char_list)
+            sys.exit()
     
     
     #print("calc_error_rate")
@@ -1149,9 +1295,35 @@ class Merged:
                 print("Error with strand in format_trans_report_line")
                 sys.exit
 
+        ####################################################
+        # create simple error line
+
+#        all_sj_both_error_simple_list = []
+#        if collapse_error_nuc_list[0] != "na":
+#            for sj_error_nuc in collapse_error_nuc_list:
+#                sj_pre_error_line = sj_error_nuc.split(">")[0]
+#                sj_post_error_line = sj_error_nuc.split(">")[1]
+#
+#                sj_pre_error_split = sj_pre_error_line.split("_")
+#                sj_post_error_split = sj_post_error_line.split("_")
+#
+#                sj_pre_error_simple_string,sj_post_error_simple_string = simple_sj_error(sj_pre_error_split, sj_post_error_split)
+#
+#                sj_both_error_simple_string = sj_pre_error_simple_string + ">" + sj_post_error_simple_string
+#
+#                all_sj_both_error_simple_list.append(sj_both_error_simple_string)
+#
+#            all_sj_both_error_simple_list_line = ";".join(all_sj_both_error_simple_list)
+#        else:
+#            all_sj_both_error_simple_list_line = "na"
+
+        ####################################################
+
         collapse_error_nuc_list_line = ";".join(collapse_error_nuc_list)
 
         trans_report_list.append(collapse_error_nuc_list_line)
+
+#        trans_report_list.append(all_sj_both_error_simple_list_line)
 
         trans_report_line = "\t".join(trans_report_list)
         
@@ -1291,7 +1463,28 @@ def compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand): #use t
             o_e_start = o_e_start_list[j]
             e_end = e_end_list[j]
             o_e_end = o_e_end_list[j]
-            
+
+            # check for micro exons which do not overlap but fit in wobble range
+            if e_start >= o_e_end:
+                trans_comp_flag = "diff_transcripts"
+                start_match_list = []
+                start_diff_list = []
+                end_match_list = []
+                end_diff_list = []
+                short_trans = "none"
+                min_exon_num = 0
+                continue
+
+            if o_e_start >= e_end:
+                trans_comp_flag = "diff_transcripts"
+                start_match_list = []
+                start_diff_list = []
+                end_match_list = []
+                end_diff_list = []
+                short_trans = "none"
+                min_exon_num = 0
+                continue
+
             start_threshold = exon_diff_threshold
             end_threshold = exon_diff_threshold
             
@@ -1464,6 +1657,7 @@ def sj_error_priority_finder(trans_obj,i,max_exon_num):
 
     sj_pre_error_list = trans_obj.sj_pre_error_list
     sj_post_error_list = trans_obj.sj_post_error_list
+
     
     #use these to record the error type
     e_start_priority_error = "na"
@@ -1571,6 +1765,489 @@ def sj_error_priority_finder(trans_obj,i,max_exon_num):
         sys.exit()
 
     return e_start_priority,e_end_priority,e_start_priority_error,e_end_priority_error
+
+
+####################################################################################################
+def length_error_type(error_string,error_report):
+    # 0>0.C.A;0>0;1I_5M>0;1I_7M>0;8.A.T_7.T.A>8M_1D;0>0
+
+    if len(error_string.split(".")) == 3:
+        error_type = "mismatch"
+    elif error_string == "0":
+        error_type = "0"
+    elif "I" in error_string:
+        error_type = "I"
+    elif "D" in error_string:
+        error_type = "D"
+    elif "M" in error_string:
+        error_type = "M"
+    elif "S" in error_string:
+        error_type = "S"
+    elif "H" in error_string:
+        error_type = "H"
+    else:
+        print("Error with error_string: error type not recognized")
+        print(error_string)
+        print(error_report)
+        sys.exit()
+
+
+    if error_type == "0":
+        error_length = 0
+    if error_type == "I":
+    
+        if len(error_string.split("I")) != 2:
+            print("Error with error_string: Insertion line issue")
+            print(error_string)
+            print(error_report)
+            sys.exit()
+        
+        error_length = int(error_string.split("I")[0])
+    
+    elif error_type == "D":
+    
+        if len(error_string.split("D")) != 2:
+            print("Error with error_string: Deletion line issue")
+            print(error_string)
+            print(error_report)
+            sys.exit()
+        
+        error_length = int(error_string.split("D")[0])
+    
+    elif error_type == "S":
+    
+        if len(error_string.split("S")) != 2:
+            print("Error with error_string: Soft clipping line issue")
+            print(error_string)
+            print(error_report)
+            sys.exit()
+        
+        error_length = int(error_string.split("S")[0])
+    
+    elif error_type == "H":
+    
+        if len(error_string.split("H")) != 2:
+            print("Error with error_string: Hard clipping line issue")
+            print(error_string)
+            print(error_report)
+            sys.exit()
+        
+        error_length = int(error_string.split("H")[0])
+    
+    elif error_type == "mismatch": # this is a mismatch error representing only one nt position
+        error_length = 1
+        
+    elif error_type == "M": # This is a match and not an error
+        if len(error_string.split("M")) != 2:
+            print("Error with error_string: M line issue")
+            print(error_string)
+            print(error_report)
+            sys.exit()
+        
+        error_length = int(error_string.split("M")[0])
+    
+    return error_length,error_type
+
+def convert_int_list_to_string(int_list):
+    
+    str_list = []
+    
+    for int_val in int_list:
+        str_list.append(str(int_val))
+    
+    return str_list
+
+
+def simple_sj_error(sj_pre_error_split,sj_post_error_split):
+
+    #ses_match_char = "_"
+
+    ################################################################################
+    ################################################################################
+
+    sj_pre_error_simple_list = []
+    sj_pre_error_count = 1
+
+    sj_pre_error_split_reverse = sj_pre_error_split
+
+    sj_pre_error_split_reverse.reverse()
+
+    for sj_pre_error_string in sj_pre_error_split_reverse:
+        # sj_pre_error_count += 1
+
+        if len(sj_pre_error_string.split(".")) == 3:
+            mismatch_position = int(sj_pre_error_string.split(".")[0])
+            mismatch_position += 1
+            if sj_pre_error_count == 1:
+                for j in xrange(mismatch_position - 1):
+                    sj_pre_error_simple_list.append(ses_match_char)
+                    sj_pre_error_count += 1
+                sj_pre_error_simple_list.append("X")
+                sj_pre_error_count += 1
+            elif sj_pre_error_count > 1:
+                m_pos_diff = mismatch_position - sj_pre_error_count
+                # for j in xrange(m_pos_diff-1):
+                for j in xrange(m_pos_diff):
+                    sj_pre_error_simple_list.append(ses_match_char)
+                    sj_pre_error_count += 1
+                sj_pre_error_simple_list.append("X")
+                sj_pre_error_count += 1
+        elif len(sj_pre_error_string.split(".")) == 1:
+
+            if sj_pre_error_string == "0":
+                for j in xrange(sj_err_threshold):
+                    sj_pre_error_simple_list.append(ses_match_char)
+
+            else:
+                [cig_dig_list, cig_char_list] = cigar_list(sj_pre_error_string)
+
+                cig_dig = int(cig_dig_list[0])
+                cig_char = cig_char_list[0]
+
+                if cig_char == "M":
+                    for j in xrange(cig_dig):
+                        sj_pre_error_simple_list.append(ses_match_char)
+                        sj_pre_error_count += 1
+                elif cig_char == "I":
+                    for j in xrange(cig_dig):
+                        sj_pre_error_simple_list.append("I")
+                        sj_pre_error_count += 1
+                elif cig_char == "D":
+                    for j in xrange(cig_dig):
+                        sj_pre_error_simple_list.append("D")
+                        sj_pre_error_count += 1
+                elif cig_char == "S":
+                    for j in xrange(cig_dig):
+                        sj_pre_error_simple_list.append("S")
+                        sj_pre_error_count += 1
+                elif cig_char == "H":
+                    for j in xrange(cig_dig):
+                        sj_pre_error_simple_list.append("H")
+                        sj_pre_error_count += 1
+        else:
+            print("Error with LDE error char")
+            sys.exit()
+
+    if len(sj_pre_error_simple_list) < sj_err_threshold:
+        for j in xrange(sj_err_threshold - len(sj_pre_error_simple_list)):
+            sj_pre_error_simple_list.append(ses_match_char)
+
+    sj_pre_error_simple_list_reverse = sj_pre_error_simple_list
+    sj_pre_error_simple_list_reverse.reverse()
+
+    sj_pre_error_simple_string = "".join(sj_pre_error_simple_list_reverse)
+
+    ################################################################################
+    ################################################################################
+
+    sj_post_error_simple_list = []
+    sj_post_error_count = 1
+    for sj_post_error_string in sj_post_error_split:
+        # sj_post_error_count += 1
+
+        if len(sj_post_error_string.split(".")) == 3:
+            mismatch_position = int(sj_post_error_string.split(".")[0])
+            mismatch_position += 1
+            if sj_post_error_count == 1:
+                for j in xrange(mismatch_position - 1):
+                    sj_post_error_simple_list.append(ses_match_char)
+                    sj_post_error_count += 1
+                sj_post_error_simple_list.append("X")
+                sj_post_error_count += 1
+            elif sj_post_error_count > 1:
+                m_pos_diff = mismatch_position - sj_post_error_count
+                # for j in xrange(m_pos_diff-1):
+                for j in xrange(m_pos_diff):
+                    sj_post_error_simple_list.append(ses_match_char)
+                    sj_post_error_count += 1
+                sj_post_error_simple_list.append("X")
+                sj_post_error_count += 1
+                #################################################################################################Continue here
+        elif len(sj_post_error_string.split(".")) == 1:
+
+            if sj_post_error_string == "0":
+                for j in xrange(sj_err_threshold):
+                    sj_post_error_simple_list.append(ses_match_char)
+
+            else:
+                [cig_dig_list, cig_char_list] = cigar_list(sj_post_error_string)
+
+                cig_dig = int(cig_dig_list[0])
+                cig_char = cig_char_list[0]
+
+                if cig_char == "M":
+                    for j in xrange(cig_dig):
+                        sj_post_error_simple_list.append(ses_match_char)
+                        sj_post_error_count += 1
+                elif cig_char == "I":
+                    for j in xrange(cig_dig):
+                        sj_post_error_simple_list.append("I")
+                        sj_post_error_count += 1
+                elif cig_char == "D":
+                    for j in xrange(cig_dig):
+                        sj_post_error_simple_list.append("D")
+                        sj_post_error_count += 1
+                elif cig_char == "S":
+                    for j in xrange(cig_dig):
+                        sj_post_error_simple_list.append("S")
+                        sj_post_error_count += 1
+                elif cig_char == "H":
+                    for j in xrange(cig_dig):
+                        sj_post_error_simple_list.append("H")
+                        sj_post_error_count += 1
+        else:
+            print("Error with LDE error char")
+            sys.exit()
+
+    if len(sj_post_error_simple_list) < sj_err_threshold:
+        for j in xrange(sj_err_threshold - len(sj_post_error_simple_list)):
+            sj_post_error_simple_list.append(ses_match_char)
+
+    sj_post_error_simple_string = "".join(sj_post_error_simple_list)
+
+
+    return sj_pre_error_simple_string,sj_post_error_simple_string
+
+
+def sj_error_local_density(trans_obj):
+    # figure out errors near splice junctions
+    ######################################################
+
+    e_start_list = trans_obj.exon_start_list
+    e_end_list = trans_obj.exon_end_list
+
+    strand = trans_obj.strand
+    exon_num = len(e_start_list)
+    
+    trans_cigar = trans_obj.cigar
+
+    max_exon_num = exon_num
+
+    sj_pre_error_list = trans_obj.sj_pre_error_list
+    sj_post_error_list = trans_obj.sj_post_error_list
+
+    # use these to record the error type
+    e_start_priority_error = "na"
+    e_end_priority_error = "na"
+
+    priority_error_delimit = ">"
+    
+    bad_sj_num_list = [] # list of the splice junctions that failed to pass quality threshold
+    
+    bad_sj_error_count_list = [] #  number of errors at each SJ
+    
+    bad_sj_num_pre_list = []
+    
+    bad_sj_num_post_list = []
+    
+    bad_sj_flag = 0 # if 0 then no bad SJ, if higher than 0 then there are bad SJ
+    
+    sj_error_list = []
+
+    sj_error_nuc_list = []
+
+    all_sj_post_error_simple_list = []
+    all_sj_pre_error_simple_list = []
+
+    all_sj_both_error_simple_list = []
+
+    for i in xrange(max_exon_num-1):
+        
+        this_bad_sj_flag = 0
+
+        sj_pre_error_i_count = 0
+        sj_post_error_i_count = 0
+
+        sj_pre_error_d_count = 0
+        sj_post_error_d_count = 0
+
+        sj_pre_error_m_count = 0
+        sj_post_error_m_count = 0
+        
+        sj_pre_error_s_count = 0
+        sj_post_error_s_count = 0
+        
+        sj_pre_error_h_count = 0
+        sj_post_error_h_count = 0
+        
+        sj_pre_error_all_line = ""
+        sj_post_error_all_line = ""
+
+        sj_pre_error = sj_pre_error_list[i]
+        sj_post_error = sj_post_error_list[i]
+
+        sj_error_nuc_string = sj_pre_error + ">" + sj_post_error
+        sj_error_nuc_list.append(sj_error_nuc_string)
+
+        # 0>0.C.A;0>0;1I_5M>0;1I_7M>0;8.A.T_7.T.A>8M_1D;0>0
+        
+        sj_pre_error_split = sj_pre_error.split("_")
+        sj_post_error_split = sj_post_error.split("_")
+
+        sj_pre_error_simple_string,sj_post_error_simple_string = simple_sj_error(sj_pre_error_split, sj_post_error_split)
+
+        all_sj_post_error_simple_list.append(sj_post_error_simple_string)
+        all_sj_pre_error_simple_list.append(sj_pre_error_simple_string)
+
+        all_sj_both_error_simple_list.append(sj_pre_error_simple_string + ">" +sj_post_error_simple_string)
+
+
+        #print(e_start_list)
+        #print(e_end_list)
+        #print(sj_pre_error_list)
+        #print(sj_post_error_list)
+
+        for sj_pre_error_char in sj_pre_error_split:
+
+
+            error_length,error_type = length_error_type(sj_pre_error_char,trans_cigar)
+            #########################################################################################
+            #########################################################################################
+            #########################################################################################Continue here RK 2018/10/09
+
+            if error_type == "mismatch":
+                sj_pre_error_m_count = sj_pre_error_m_count + error_length
+            elif error_type == "I":
+                sj_pre_error_i_count = sj_pre_error_i_count + error_length
+            elif error_type == "D":
+                sj_pre_error_d_count = sj_pre_error_d_count + error_length
+            elif error_type == "S":
+                sj_pre_error_s_count = sj_pre_error_s_count + error_length
+            elif error_type == "H":
+                sj_pre_error_h_count = sj_pre_error_h_count + error_length
+
+        
+        for sj_post_error_char in sj_post_error_split:
+            
+            error_length,error_type = length_error_type(sj_post_error_char,trans_cigar)
+            
+            #####################################################Continue here RK 2018/10/09
+
+            if error_type == "mismatch":
+                sj_post_error_m_count = sj_post_error_m_count + error_length
+            elif error_type == "I":
+                sj_post_error_i_count = sj_post_error_i_count + error_length
+            elif error_type == "D":
+                sj_post_error_d_count = sj_post_error_d_count + error_length
+            elif error_type == "S":
+                sj_post_error_s_count = sj_post_error_s_count + error_length
+            elif error_type == "H":
+                sj_post_error_h_count = sj_post_error_h_count + error_length
+
+        
+        sj_pre_error_all_count = sj_pre_error_i_count + sj_pre_error_d_count + sj_pre_error_m_count + sj_pre_error_s_count + sj_pre_error_h_count
+        sj_post_error_all_count = sj_post_error_i_count + sj_post_error_d_count + sj_post_error_m_count + sj_post_error_s_count + sj_post_error_h_count
+        
+        sj_pre_error_all_line = ",".join([str(sj_pre_error_i_count),str(sj_pre_error_d_count),str(sj_pre_error_m_count),str(sj_pre_error_s_count),str(sj_pre_error_h_count)])
+        sj_post_error_all_line = ",".join([str(sj_post_error_i_count),str(sj_post_error_d_count),str(sj_post_error_m_count),str(sj_post_error_s_count),str(sj_post_error_h_count)])
+        
+        sj_all_error_all_line = ">".join([sj_pre_error_all_line,sj_post_error_all_line])
+        
+        sj_error_list.append(sj_all_error_all_line)
+        
+        
+        if strand == "+":
+            sj_num = i + 1
+        elif strand == "-":
+            sj_num = max_exon_num - i - 1
+        
+        
+        if sj_pre_error_all_count > lde_threshold:
+            bad_sj_flag += 1
+            this_bad_sj_flag = 1
+            
+            bad_sj_num_pre_list.append(sj_num)
+        
+        if sj_post_error_all_count > lde_threshold:
+            bad_sj_flag += 1
+            this_bad_sj_flag = 1
+            
+            bad_sj_num_post_list.append(sj_num)
+        
+        if this_bad_sj_flag > 0 :
+            bad_sj_num_list.append(sj_num)
+        
+        sj_error_string =  str(sj_pre_error_all_count) + ">" + str(sj_post_error_all_count)
+        
+        bad_sj_error_count_list.append(sj_error_string)
+
+
+
+
+    sj_lde_flag = "na"
+    if bad_sj_flag ==  0:
+        sj_lde_flag = "lde_pass"
+    elif bad_sj_flag >  0:
+        sj_lde_flag = "lde_fail"
+    else:
+        print("Error with sj_lde_flag")
+        sys.exit()
+
+    #prepare lde outline
+    if len(sj_error_list) > 0:
+        sj_error_line = ";".join(sj_error_list)
+    elif len(sj_error_list) == 0:
+        sj_error_line = "na"
+    else:
+        print("Error with sj_error_line")
+        sys.exit()
+
+    bad_sj_num_str_list = convert_int_list_to_string(bad_sj_num_list)
+
+    if len(bad_sj_num_str_list) > 0:
+        bad_sj_num_line = ",".join(bad_sj_num_str_list)
+    elif len(bad_sj_num_str_list) == 0:
+        bad_sj_num_line = "0"
+    else:
+        print("Error with bad_sj_num_line")
+        sys.exit()
+
+    if len(bad_sj_error_count_list) > 0 :
+        bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
+    elif len(bad_sj_error_count_list) == 0 :
+        bad_sj_error_count_line = "na"
+    else:
+        print("Error with bad_sj_error_count_line")
+        sys.exit()
+
+    num_exon_str = str(max_exon_num)
+    
+    #####################################################
+    #generate detailed error profile around splice junctions
+
+    if len(sj_error_nuc_list) > 0:
+        collapse_error_nuc_list_line = ";".join(sj_error_nuc_list)
+    else:
+        collapse_error_nuc_list_line = "na"
+
+    if len(all_sj_both_error_simple_list) > 0:
+        all_sj_both_error_simple_line = ";".join(all_sj_both_error_simple_list)
+    else:
+        all_sj_both_error_simple_line = "na"
+
+    #####################################################
+    
+    lde_outlist = []
+    lde_outlist.append(trans_obj.cluster_id)
+    lde_outlist.append(sj_lde_flag)
+    lde_outlist.append(trans_obj.scaff_name)
+    lde_outlist.append(str(trans_obj.start_pos))
+    lde_outlist.append(str(trans_obj.end_pos))
+    lde_outlist.append(trans_obj.strand)
+    lde_outlist.append(num_exon_str)
+    lde_outlist.append(bad_sj_num_line)
+    lde_outlist.append(bad_sj_error_count_line)
+    lde_outlist.append(sj_error_line)
+    lde_outlist.append(collapse_error_nuc_list_line)
+    lde_outlist.append(all_sj_both_error_simple_line)
+    lde_outlist.append(trans_obj.cigar)
+    
+    
+    
+    lde_outline = "\t".join(lde_outlist)
+
+
+    return bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline
 
 ##############################################################
 
@@ -3265,6 +3942,7 @@ with open(sam_file) as sam_file_contents:
         seq_length = trans_obj.seq_length
         strand = trans_obj.strand
     
+    
         if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
             accept_flag = "discarded"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
@@ -3272,7 +3950,41 @@ with open(sam_file) as sam_file_contents:
             outfile_cluster.write("\n")
             #skip the transcript because the mapping is poor
             continue
+        
         else:
+            
+            ############################################################################################################
+            ############################################################################################################
+            ############################################################################################################
+            
+            bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
+
+            outfile_lde.write(lde_outline)
+            outfile_lde.write("\n")
+
+            if bad_sj_flag > 0:
+                #sadfsdfs
+                
+                #bad_sj_num_str_list =convert_int_list_to_string(bad_sj_num_list)
+                
+                #bad_sj_num_line = ",".join(bad_sj_num_str_list)
+                #bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
+                
+                #lde_file_line = "\t".join([trans_obj.cluster_id,trans_obj.scaff_name,str(trans_obj.start_pos),str(trans_obj.end_pos),trans_obj.strand,bad_sj_num_line,bad_sj_error_count_line,trans_obj.cigar])
+                #outfile_lde.write(lde_outline)
+                #outfile_lde.write("\n")
+                
+                #######################################
+                
+                #add to cluster file
+                
+                accept_flag = "local_density_error"
+                cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+                outfile_cluster.write(cluster_line)
+                outfile_cluster.write("\n")
+                
+                continue
+            
             accept_flag = "accepted"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
             outfile_cluster.write(cluster_line)
@@ -3363,6 +4075,12 @@ trans_check_count = 0 ##########################################################
 
 prev_time = track_time(start_time,prev_time)
 print("going through groups: " + str(total_group_count))
+
+if total_group_count == 0:
+    print("Error, no groups found!")
+    sys.exit()
+
+
 for i in xrange(total_group_count+1):
     
     trans_list = group_trans_list_dict[i]
@@ -3678,3 +4396,6 @@ for cov_line in cov_group_var_list:
     
 prev_time = track_time(start_time,prev_time)
     
+
+
+print("TAMA Collapse has successfully finished running!")
