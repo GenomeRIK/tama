@@ -124,7 +124,16 @@ for line in blastp_file_contents:
                 
             query_list.append(q_name)
             query_dict[q_name] = []
+            
+            # Bedtools 2.26 or earlier
+            #>G1;G1.1::1:219-3261(+)
+            #>G1;G1.2::1:1713-3246(+)
+
+            # bedtools 2.27 or later
+            #G1;G1.1(-)
+            
             trans_id = q_name.split(":")[0]
+            trans_id = trans_id.split("(")[0]
             if trans_id not in trans_id_dict:
                 trans_id_dict[trans_id] = {}
                 trans_id_list.append(trans_id)
@@ -303,6 +312,8 @@ for trans_id in trans_id_list:
     for q_name in trans_id_dict[trans_id]:
         q_name_split = q_name.split(":")
         trans_id = q_name_split[0]
+        trans_id = trans_id.split("(")[0] #account for newer bedtools 2.27 formatting
+        
         q_frame = q_name_split[-7]
         
         #for missing nucleotides the protein will not be complete so cannot do ORF prediction
@@ -399,6 +410,7 @@ for trans_id in trans_id_list:
         for q_name in trans_id_dict[trans_id]:
             q_name_split = q_name.split(":")
             trans_id = q_name_split[0]
+            trans_id = trans_id.split("(")[0] #account for newer bedtools 2.27 formatting
 
             q_frame = q_name_split[-7]
 

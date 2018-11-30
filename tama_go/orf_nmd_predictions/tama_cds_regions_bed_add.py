@@ -79,8 +79,22 @@ for seq_record in SeqIO.parse(fasta_file, "fasta"):
     trans_len_dict[trans_id] = trans_length
 
 
+#check for issues with matching transcript ID's
+matching_trans_id_count = 0
+for line in pbri_file_contents:
+    line_split = line.split("\t")
+    trans_id = line_split[3]
     
-    
+    if trans_id not in trans_dict:
+        continue
+
+    matching_trans_id_count += 1
+
+if matching_trans_id_count == 0:
+    print("Error with transcript ID's not matching.")
+    print("Check the ID's in all the input files to see if they have matching formats.")
+    sys.exit()
+
 for line in pbri_file_contents:
     line_split = line.split("\t")
     trans_id = line_split[3]
@@ -107,6 +121,7 @@ for line in pbri_file_contents:
 
 
         continue
+
 
 
     frame = trans_dict[trans_id][1]
