@@ -73,6 +73,7 @@ print("Going through sequences")
 for seq_record in SeqIO.parse(fasta_file, "fasta"):
 
     trans_id = str(seq_record.id).split(":")[0]
+    trans_id = trans_id.split("(")[0]
     trans_seq = str(seq_record.seq)
     trans_seq = trans_seq.upper()
     trans_length = len(trans_seq)
