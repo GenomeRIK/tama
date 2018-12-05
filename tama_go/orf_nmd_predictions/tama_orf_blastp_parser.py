@@ -196,7 +196,6 @@ for line in blastp_file_contents:
             passed_headers_flag = 0
             split_header_flag = 0
 
-
             continue
 
     if not line.startswith((" S"," I","Query","Sbjct","Length",">")):
@@ -215,8 +214,6 @@ for line in blastp_file_contents:
         passed_headers_flag = 1 # used to flag when we have passed all the header info
         query_id_line_flag = 1
 
-
-
         if line.endswith("-"):
             query_id_line_flag = 0
             passed_headers_flag = 0
@@ -224,16 +221,19 @@ for line in blastp_file_contents:
             query_line = q_name
             
             #print(query_line)
-
-
-
-
+            
         continue
 
 
         
     if line.startswith(">"):
-        s_name = line.split()[0].split(">")[1]
+        # >E1C721 Uncharacterized protein OS=Gallus gallus GN=LOC425783 PE=4 SV=2
+
+        # > sp|Q9HC56|PCDH9_HUMAN Protocadherin-9 OS=Homo sapiens OX=9606
+
+        s_name = line.split(">")[1]
+        s_name = s_name.lstrip()
+        s_name = s_name.split()[0]
         s_len = 0
         hit_start_flag = 1
         empty_line_count = 0
