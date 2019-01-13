@@ -442,6 +442,8 @@ def mismatch_seq(genome_seq,query_seq,genome_pos,seq_pos):
         genome_nuc = genome_seq[i]
         read_nuc = query_seq[i]
 
+        read_nuc = read_nuc.upper()
+
         nuc_match_flag = 0
         for g_nuc_char in nuc_char_dict[genome_nuc]:
             for t_nuc_char in nuc_char_dict[read_nuc]:
