@@ -23,6 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
+tc_date = 'tc_version_date_2019_03_04'
 
 #####################################################################
 #####################################################################
@@ -47,9 +48,17 @@ ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this t
 
 ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
 
-
+ap.add_argument('-v', type=str, nargs=1, help='Prints out version date and exits.')
 
 opts = ap.parse_args()
+
+#check for version request
+if not opts.v:
+    print(tc_date)
+else:
+    print(tc_date)
+    print("Program did not run")
+    sys.exit()
 
 #check for missing args
 missing_arg_flag = 0
@@ -936,6 +945,9 @@ class Transcript:
         self.a_percent = 0.0
         self.n_percent = 0.0
         
+        self.percent_cov = 0.0
+        self.percent_identity = 0.0
+        
     
     def add_sam_info(self,sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list):
         self.sam_flag = sam_flag
@@ -987,6 +999,8 @@ class Transcript:
         percent_cov = float(self.seq_length - self.h_count - self.s_count) / float(self.seq_length)
         percent_cov = percent_cov * 100.0
         
+        self.percent_cov = percent_cov
+        
         return percent_cov
     
     def calc_identity(self):
@@ -994,6 +1008,8 @@ class Transcript:
         nonmatch_count = self.h_count + self.s_count + self.i_count + self.d_count + self.mis_count
         percent_identity = float(self.seq_length - nonmatch_count) / float(self.seq_length)
         percent_identity = percent_identity * 100.0
+        
+        self.percent_identity = percent_identity
         
         return percent_identity
     
@@ -3792,6 +3808,54 @@ def detect_rt_switch(trans_obj): # looks for complementary structure in intronic
             bind_seq_dict[i][3] = rev_comp_end_seq
     
     return num_junct_bind,bind_seq_dict
+
+####################################################################################################
+
+def compare_multimaps(trans_obj_a,trans_obj_b): ### Added this 2019/03/04
+    
+    best_map_id = "na"
+    a_percent_cov = trans_obj_a.self.percent_cov
+    b_percent_cov = trans_obj_b.self.percent_cov
+    
+    a_percent_identity = trans_obj_a.self.percent_identity
+    b_percent_identity = trans_obj_b.self.percent_identity
+    
+    a_pass_flag = 0
+    b_pass_flag = 0
+    
+    if a_percent_cov > coverage_threshold  and a_percent_identity > identity_threshold:
+        a_pass_flag = 1
+    
+    if b_percent_cov > coverage_threshold  and b_percent_identity > identity_threshold:
+        b_pass_flag = 1
+    
+    if a_pass_flag == 0 and b_pass_flag == 0:
+        best_trans_obj = trans_obj_a # both will not pass thresholds so just choose A
+        best_map_id = "A"
+    elif a_pass_flag > 0 and b_pass_flag == 0:
+        best_trans_obj = trans_obj_a # B does not pass thresholds
+        best_map_id = "A"
+    elif a_pass_flag == 0 and b_pass_flag > 0:
+        best_trans_obj = trans_obj_b # A does not pass thresholds
+        best_map_id = "B"
+    elif a_pass_flag > 0 and b_pass_flag > 0:
+    
+        # just use coverage to choose best mapping
+        if a_percent_cov >= b_percent_cov:
+            best_trans_obj = trans_obj_a
+            best_map_id = "A"
+        elif a_percent_cov < b_percent_cov:
+            best_trans_obj = trans_obj_b
+            best_map_id = "B"
+    else:
+        print("Error with compare_multimaps")
+        print("Early termination of TAMA collapse run!!")
+        sys.exit()
+    
+    return best_trans_obj,best_map_id
+        
+    
+    
     
 
 ####################################################################################################
@@ -3825,8 +3889,8 @@ sam_flag_dict = {} #sam_flag_dict[flag number] = meaning
 sam_flag_dict[0] = "forward_strand"
 sam_flag_dict[4] = "unmapped"
 sam_flag_dict[16] = "reverse_strand"
-sam_flag_dict[2048] = "not_primary"
-sam_flag_dict[2064] = "not_primary"
+sam_flag_dict[2048] = "chimeric"
+sam_flag_dict[2064] = "chimeric"
 sam_flag_dict[256] = "not_primary"
 sam_flag_dict[272] = "not_primary"
 
@@ -3906,9 +3970,9 @@ with open(sam_file) as sam_file_contents:
         # Above: Check sam and gmap strand info!!!
         ####################################
         
-        if mapped_flag == "unmapped" or mapped_flag == "not_primary":
+        if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
             unmapped_dict[read_id] = 1
-            accept_flag = "NA"
+            accept_flag = mapped_flag # added this 2019/03/04
             percent_coverage = "NA"
             percent_identity = "NA"
             error_line = "NA"
@@ -3921,6 +3985,7 @@ with open(sam_file) as sam_file_contents:
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
             continue
+
         
         map_seq_length = mapped_seq_length(cigar)
         
@@ -3943,7 +4008,8 @@ with open(sam_file) as sam_file_contents:
         error_line = trans_obj.make_error_line()
         seq_length = trans_obj.seq_length
         strand = trans_obj.strand
-    
+        
+        multimap_flag = 0
     
         if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
             accept_flag = "discarded"
@@ -3996,18 +4062,55 @@ with open(sam_file) as sam_file_contents:
             downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
             trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
             
-            trans_obj_dict[read_id] = trans_obj
+            #check for multi maps
+            if read_id in trans_obj_dict:
+                print("Read has multi map")
+                print(line)
+                print(percent_coverage)
+                print(percent_identity)
+                
+                trans_obj_a = trans_obj_dict[read_id]
+                trans_obj_b = trans_obj
+                
+                best_trans_obj,best_map_id = compare_multimaps(trans_obj_a,trans_obj_b)
+                
+                #only re-assign if the new map is better, otherwise old map is aready processed
+                if best_map_id == "B":
+                    trans_obj_dict[read_id] = best_trans_obj
+                    multimap_flag = 1
+                else:
+                    # if this new map is not going to be used we can skip the rest of the loop
+                    continue
+                
+            else:
+                trans_obj_dict[read_id] = trans_obj
 
-            
-        
+
         #check if a read has multi mapped!
-        if read_id in trans_group_dict:
-            print("cluster multi mapped!")
-            print(line)
-            print(percent_coverage)
-            print(percent_identity)
-            print(trans_obj.h_count)
-            sys.exit()
+        # remove old read info if new map is better
+        if multimap_flag == 1:
+            old_group_count = trans_group_dict[read_id]
+            
+            #check that the old group is not only made up of this read mapping
+            if len(group_trans_list_dict[old_group_count]) > 1:
+                group_trans_list_dict[old_group_count].remove(read_id) # remove read from old group
+                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+        
+            elif len(group_trans_list_dict[old_group_count]) == 1: # group is only made of this mapping
+                group_trans_list_dict.pop(old_group_count, None) # remove group
+                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+            else:
+                print("Error with dealing with multimap management")
+                print("Warning: temrinated early!")
+                sys.exit()
+        
+        #if read_id in trans_group_dict:
+        #    print("cluster multi mapped!")
+        #    print(line)
+        #    print(percent_coverage)
+        #    print(percent_identity)
+        #    print(trans_obj.h_count)
+        #    sys.exit()
         
         #group trans by start and end coords
         if this_scaffold == "none":
