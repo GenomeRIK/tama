@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_03_04'
+tc_date = 'tc_version_date_2019_04_18'
 
 #####################################################################
 #####################################################################
@@ -45,6 +45,9 @@ ap.add_argument('-sj', type=str, nargs=1, help='Use error threshold to prioritiz
 ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors near splice junctions (default is 10bp)')
 ap.add_argument('-lde', type=str, nargs=1, help='Threshold for amount of local density error near splice junctions that is allowed (default is 1000 errors which practically means no threshold is applied)')
 ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this to pick the symbol used to represent matches in the simple error string for LDE output.')
+
+ap.add_argument('-b', type=str, nargs=1, help='Use BAM instead of SAM')
+
 
 ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
 
@@ -147,6 +150,14 @@ if not opts.ses:
     ses_match_char = "_"
 else:
     ses_match_char = int(opts.ses[0])
+
+if not opts.b:
+    print("Using SAM format for reading in.")
+    bam_flag = "SAM"
+else:
+    print("Using BAM format for reading in.")
+    import pysam
+    bam_flag = str(opts.b[0])
 
 if not opts.log:
     print("Default log output on")
@@ -3918,256 +3929,293 @@ scaffold_list = []
 sam_count = 0
 
 prev_time = track_time(start_time,prev_time)
+
+
+#################################################################################################### SAM or BAM
+
+
 print("going through sam file")
-with open(sam_file) as sam_file_contents:
-    for line in sam_file_contents:
-        line_split = line.split("\t")
-        
-    #    if line_split[0] == "@SQ":
-    #        seq_name = line_split[1].split(":")[1]
-    #        seq_length = line_split[2].split(":")[1]
-    #        
-    #        sam_scaffold_dict[seq_name] = seq_length
-    #        sam_scaffold_list.append(seq_name)
-    #    
-        if line.startswith("@"):
-            continue
-        
-        
-        sam_count += 1
-        if sam_count % 5000 == 0:
-            print("sam count " + str(sam_count))
-        
-        read_id = line_split[0]
-        sam_flag = int(line_split[1])
-        scaff_name = line_split[2]
-        start_pos = int(line_split[3])
-        
-        cigar = line_split[5]
-        read_seq = line_split[9]
-        seq_list = list(read_seq)
-        mapped_flag = sam_flag_dict[sam_flag]
-        
-        ####################################
-        #Check sam and gmap strand info!!!
-        #get strand information from gmap flag
 
-        xs_flag = "na"
-        for field in line_split:
-            if "XS:A:" in field:
-                xs_flag = field.split(":")[-1]
+if bam_flag == "BAM":
+    
+    from subprocess import Popen, PIPE
+    sam_file_contents = []
 
-        if mapped_flag == "forward_strand"  and xs_flag == "-":
-            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"+-"])
-            outfile_strand.write(outline_strand)
-            outfile_strand.write("\n")
-        elif mapped_flag == "reverse_strand" and xs_flag == "+":
-            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"-+"])
-            outfile_strand.write(outline_strand)
-            outfile_strand.write("\n")
-        
-        #
-        # Above: Check sam and gmap strand info!!!
-        ####################################
-        
-        if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
-            unmapped_dict[read_id] = 1
-            accept_flag = mapped_flag # added this 2019/03/04
-            percent_coverage = "NA"
-            percent_identity = "NA"
-            error_line = "NA"
-            quality_percent = "NA"
-            length = "NA"
-            strand = "NA"
-            cigar = "NA"
-            
-            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
-            outfile_cluster.write(cluster_line)
-            outfile_cluster.write("\n")
-            continue
+    samtools_path = "samtools"
+    pline = [samtools_path, 'view', sam_file]
+    try:
+        p = Popen(pline, bufsize=-1, stdout=PIPE, stderr=PIPE)
+    except OSError:
+        raise OSError('Samtools not found!\n')
 
-        
-        map_seq_length = mapped_seq_length(cigar)
-        
-        [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
+    sam_file_list = p.communicate()
+    sam_file_contents = sam_file_list[0].split("\n")
     
-        [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
-    
-        trans_obj = Transcript(read_id)
-        trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
-        trans_obj.add_map_seq_length(map_seq_length)
-        trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
-        trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
-        
-        percent_coverage = trans_obj.calc_coverage()
-        percent_identity = trans_obj.calc_identity()
-        
-        percent_coverage_str = str(round(percent_coverage,2))
-        percent_identity_str = str(round(percent_identity,2))
-        
-        error_line = trans_obj.make_error_line()
-        seq_length = trans_obj.seq_length
-        strand = trans_obj.strand
-        
-        multimap_flag = 0
-    
-        if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
-            accept_flag = "discarded"
+    print(len(sam_file_contents))
+
+elif bam_flag == "SAM":
+    sam_file_obj = open(sam_file)
+    sam_file_contents = sam_file_obj.read().rstrip("\n").split("\n")
+
+##########################
+
+for line in sam_file_contents:
+
+    #if sam_count == 0:
+    #    print(line)
+
+    line_split = line.split("\t")
+
+#    if line_split[0] == "@SQ":
+#        seq_name = line_split[1].split(":")[1]
+#        seq_length = line_split[2].split(":")[1]
+#
+#        sam_scaffold_dict[seq_name] = seq_length
+#        sam_scaffold_list.append(seq_name)
+#
+    if line.startswith("@"):
+        continue
+
+    if line == "":
+        continue
+
+    sam_count += 1
+    if sam_count % 5000 == 0:
+        print("sam count " + str(sam_count))
+
+    read_id = line_split[0]
+    sam_flag = int(line_split[1])
+    scaff_name = line_split[2]
+    start_pos = int(line_split[3])
+
+    cigar = line_split[5]
+    read_seq = line_split[9]
+    seq_list = list(read_seq)
+    mapped_flag = sam_flag_dict[sam_flag]
+
+    ####################################
+    #Check sam and gmap strand info!!!
+    #get strand information from gmap flag
+
+    xs_flag = "na"
+    for field in line_split:
+        if "XS:A:" in field:
+            xs_flag = field.split(":")[-1]
+
+    if mapped_flag == "forward_strand"  and xs_flag == "-":
+        outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"+-"])
+        outfile_strand.write(outline_strand)
+        outfile_strand.write("\n")
+    elif mapped_flag == "reverse_strand" and xs_flag == "+":
+        outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"-+"])
+        outfile_strand.write(outline_strand)
+        outfile_strand.write("\n")
+
+    #
+    # Above: Check sam and gmap strand info!!!
+    ####################################
+
+    if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
+        unmapped_dict[read_id] = 1
+        accept_flag = mapped_flag # added this 2019/03/04
+        percent_coverage = "NA"
+        percent_identity = "NA"
+        error_line = "NA"
+        quality_percent = "NA"
+        length = "NA"
+        strand = "NA"
+        cigar = "NA"
+
+        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
+        outfile_cluster.write(cluster_line)
+        outfile_cluster.write("\n")
+        continue
+
+
+    map_seq_length = mapped_seq_length(cigar)
+
+    [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
+
+    [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
+
+    trans_obj = Transcript(read_id)
+    trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
+    trans_obj.add_map_seq_length(map_seq_length)
+    trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
+    trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
+
+    percent_coverage = trans_obj.calc_coverage()
+    percent_identity = trans_obj.calc_identity()
+
+    percent_coverage_str = str(round(percent_coverage,2))
+    percent_identity_str = str(round(percent_identity,2))
+
+    error_line = trans_obj.make_error_line()
+    seq_length = trans_obj.seq_length
+    strand = trans_obj.strand
+
+    multimap_flag = 0
+
+    if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
+        accept_flag = "discarded"
+        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+        outfile_cluster.write(cluster_line)
+        outfile_cluster.write("\n")
+        #skip the transcript because the mapping is poor
+        continue
+
+    else:
+
+        ############################################################################################################
+        ############################################################################################################
+        ############################################################################################################
+
+        bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
+
+        outfile_lde.write(lde_outline)
+        outfile_lde.write("\n")
+
+        if bad_sj_flag > 0:
+            #sadfsdfs
+
+            #bad_sj_num_str_list =convert_int_list_to_string(bad_sj_num_list)
+
+            #bad_sj_num_line = ",".join(bad_sj_num_str_list)
+            #bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
+
+            #lde_file_line = "\t".join([trans_obj.cluster_id,trans_obj.scaff_name,str(trans_obj.start_pos),str(trans_obj.end_pos),trans_obj.strand,bad_sj_num_line,bad_sj_error_count_line,trans_obj.cigar])
+            #outfile_lde.write(lde_outline)
+            #outfile_lde.write("\n")
+
+            #######################################
+
+            #add to cluster file
+
+            accept_flag = "local_density_error"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
-            #skip the transcript because the mapping is poor
+
             continue
-        
-        else:
-            
-            ############################################################################################################
-            ############################################################################################################
-            ############################################################################################################
-            
-            bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
 
-            outfile_lde.write(lde_outline)
-            outfile_lde.write("\n")
+        accept_flag = "accepted"
+        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+        outfile_cluster.write(cluster_line)
+        outfile_cluster.write("\n")
 
-            if bad_sj_flag > 0:
-                #sadfsdfs
-                
-                #bad_sj_num_str_list =convert_int_list_to_string(bad_sj_num_list)
-                
-                #bad_sj_num_line = ",".join(bad_sj_num_str_list)
-                #bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
-                
-                #lde_file_line = "\t".join([trans_obj.cluster_id,trans_obj.scaff_name,str(trans_obj.start_pos),str(trans_obj.end_pos),trans_obj.strand,bad_sj_num_line,bad_sj_error_count_line,trans_obj.cigar])
-                #outfile_lde.write(lde_outline)
-                #outfile_lde.write("\n")
-                
-                #######################################
-                
-                #add to cluster file
-                
-                accept_flag = "local_density_error"
-                cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
-                outfile_cluster.write(cluster_line)
-                outfile_cluster.write("\n")
-                
+        #only run poly detetcion on accepted transcripts
+        downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
+        trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
+
+        #check for multi maps
+        if read_id in trans_obj_dict:
+            print("Read has multi map")
+            print(line)
+            print(percent_coverage)
+            print(percent_identity)
+
+            trans_obj_a = trans_obj_dict[read_id]
+            trans_obj_b = trans_obj
+
+            best_trans_obj,best_map_id = compare_multimaps(trans_obj_a,trans_obj_b)
+
+            #only re-assign if the new map is better, otherwise old map is aready processed
+            if best_map_id == "B":
+                trans_obj_dict[read_id] = best_trans_obj
+                multimap_flag = 1
+            else:
+                # if this new map is not going to be used we can skip the rest of the loop
                 continue
-            
-            accept_flag = "accepted"
-            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
-            outfile_cluster.write(cluster_line)
-            outfile_cluster.write("\n")
-            
-            #only run poly detetcion on accepted transcripts
-            downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
-            trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
-            
-            #check for multi maps
-            if read_id in trans_obj_dict:
-                print("Read has multi map")
-                print(line)
-                print(percent_coverage)
-                print(percent_identity)
-                
-                trans_obj_a = trans_obj_dict[read_id]
-                trans_obj_b = trans_obj
-                
-                best_trans_obj,best_map_id = compare_multimaps(trans_obj_a,trans_obj_b)
-                
-                #only re-assign if the new map is better, otherwise old map is aready processed
-                if best_map_id == "B":
-                    trans_obj_dict[read_id] = best_trans_obj
-                    multimap_flag = 1
-                else:
-                    # if this new map is not going to be used we can skip the rest of the loop
-                    continue
-                
-            else:
-                trans_obj_dict[read_id] = trans_obj
+
+        else:
+            trans_obj_dict[read_id] = trans_obj
 
 
-        #check if a read has multi mapped!
-        # remove old read info if new map is better
-        if multimap_flag == 1:
-            old_group_count = trans_group_dict[read_id]
-            
-            #check that the old group is not only made up of this read mapping
-            if len(group_trans_list_dict[old_group_count]) > 1:
-                group_trans_list_dict[old_group_count].remove(read_id) # remove read from old group
-                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
-        
-            elif len(group_trans_list_dict[old_group_count]) == 1: # group is only made of this mapping
-                group_trans_list_dict.pop(old_group_count, None) # remove group
-                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
-            else:
-                print("Error with dealing with multimap management")
-                print("Warning: temrinated early!")
-                sys.exit()
-        
-        #if read_id in trans_group_dict:
-        #    print("cluster multi mapped!")
-        #    print(line)
-        #    print(percent_coverage)
-        #    print(percent_identity)
-        #    print(trans_obj.h_count)
-        #    sys.exit()
-        
-        #group trans by start and end coords
-        if this_scaffold == "none":
-            this_scaffold = scaff_name
-            group_start_pos = start_pos
-            group_end_pos = end_pos
-    
-            group_trans_list_dict[group_count] = []
-            group_trans_list_dict[group_count].append(read_id)
-            trans_group_dict[read_id] = group_count
-            
-            scaffold_list.append(this_scaffold)
-    
-            continue
-        
-        if scaff_name == this_scaffold:
-            
-            if start_pos >= group_start_pos and start_pos <= group_end_pos: #add to group
-                group_trans_list_dict[group_count].append(read_id)
-                trans_group_dict[read_id] = group_count
-                #update group end position
-                if end_pos > group_end_pos:
-                    group_end_pos = end_pos
-                
-            elif start_pos > group_end_pos: #start new group
-                group_count += 1
-                
-                group_start_pos = start_pos
-                group_end_pos = end_pos
-                
-                group_trans_list_dict[group_count] = []
-                group_trans_list_dict[group_count].append(read_id)
-                trans_group_dict[read_id] = group_count
-                
-            elif start_pos < group_start_pos: #check if sam sorted
-                print("Sam file not sorted!")
-                print(read_id)
-                sys.exit()
-            
-        
-        else: #start new group
-            this_scaffold = scaff_name
-            group_start_pos = start_pos
-            group_end_pos = end_pos
-            group_count += 1
-            
-            group_trans_list_dict[group_count] = []
-            group_trans_list_dict[group_count].append(read_id)
-            trans_group_dict[read_id] = group_count
-            
-            scaffold_list.append(this_scaffold)
-            
-        #check read id add
-        if group_trans_list_dict[group_count][-1] != read_id:
-            print("cluster not added to group_trans_list_dict")
-            print(str(group_count) + " " + read_id)
+    #check if a read has multi mapped!
+    # remove old read info if new map is better
+    if multimap_flag == 1:
+        old_group_count = trans_group_dict[read_id]
+
+        #check that the old group is not only made up of this read mapping
+        if len(group_trans_list_dict[old_group_count]) > 1:
+            group_trans_list_dict[old_group_count].remove(read_id) # remove read from old group
+            trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+
+        elif len(group_trans_list_dict[old_group_count]) == 1: # group is only made of this mapping
+            group_trans_list_dict.pop(old_group_count, None) # remove group
+            trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+        else:
+            print("Error with dealing with multimap management")
+            print("Warning: temrinated early!")
             sys.exit()
+
+    #if read_id in trans_group_dict:
+    #    print("cluster multi mapped!")
+    #    print(line)
+    #    print(percent_coverage)
+    #    print(percent_identity)
+    #    print(trans_obj.h_count)
+    #    sys.exit()
+
+    #group trans by start and end coords
+    if this_scaffold == "none":
+        this_scaffold = scaff_name
+        group_start_pos = start_pos
+        group_end_pos = end_pos
+
+        group_trans_list_dict[group_count] = []
+        group_trans_list_dict[group_count].append(read_id)
+        trans_group_dict[read_id] = group_count
+
+        scaffold_list.append(this_scaffold)
+
+        continue
+
+    if scaff_name == this_scaffold:
+
+        if start_pos >= group_start_pos and start_pos <= group_end_pos: #add to group
+            group_trans_list_dict[group_count].append(read_id)
+            trans_group_dict[read_id] = group_count
+            #update group end position
+            if end_pos > group_end_pos:
+                group_end_pos = end_pos
+
+        elif start_pos > group_end_pos: #start new group
+            group_count += 1
+
+            group_start_pos = start_pos
+            group_end_pos = end_pos
+
+            group_trans_list_dict[group_count] = []
+            group_trans_list_dict[group_count].append(read_id)
+            trans_group_dict[read_id] = group_count
+
+        elif start_pos < group_start_pos: #check if sam sorted
+            print("Sam file not sorted!")
+            print(read_id)
+            sys.exit()
+
+
+    else: #start new group
+        this_scaffold = scaff_name
+        group_start_pos = start_pos
+        group_end_pos = end_pos
+        group_count += 1
+
+        group_trans_list_dict[group_count] = []
+        group_trans_list_dict[group_count].append(read_id)
+        trans_group_dict[read_id] = group_count
+
+        scaffold_list.append(this_scaffold)
+
+    #check read id add
+    if group_trans_list_dict[group_count][-1] != read_id:
+        print("cluster not added to group_trans_list_dict")
+        print(str(group_count) + " " + read_id)
+        sys.exit()
+
+if bam_flag == "SAM":
+    sam_file_obj.close()
 
 total_group_count = group_count
 ####################################################################################################
