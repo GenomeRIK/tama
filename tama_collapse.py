@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_04_18'
+tc_date = 'tc_version_date_2019_04_29'
 
 #####################################################################
 #####################################################################
@@ -174,6 +174,24 @@ if missing_arg_flag == 1:
 sam_file = opts.s[0]
 fasta_file_name = opts.f[0]
 outfile_prefix = opts.p[0]
+
+input_sambam_flag = "na"
+
+if sam_file.endswith("bam"):
+    input_sambam_flag = "BAM"
+    if bam_flag == "SAM":
+        print("You designated SAM input but are supplying BAM. Please use the same format for input as specified.")
+        sys.exit()
+
+if sam_file.endswith("sam"):
+    input_sambam_flag = "SAM"
+    if bam_flag == "BAM":
+        print("You designated BAM input but are supplying SAM. Please use the same format for input as specified.")
+        sys.exit()
+
+if input_sambam_flag == "na":
+    print("Input SAM/BAM file not recoginized from extension format designation.")
+
 
 #####################################################################
 #####################################################################
