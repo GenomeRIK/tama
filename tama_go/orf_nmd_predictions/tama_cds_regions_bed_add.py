@@ -17,7 +17,7 @@ ap.add_argument('-p', type=str, nargs=1, help='Blastp parse file (required)')
 ap.add_argument('-a', type=str, nargs=1, help='Annotation bed file (required)')
 ap.add_argument('-f', type=str, nargs=1, help='Fasta for annotation file (required)')
 ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
-
+ap.add_argument('-s', type=str, nargs=1, help='Include stop codon in CDS region (include_stop), default is to remove stop codon from CDS region')
 
 opts = ap.parse_args()
 
@@ -45,20 +45,14 @@ pbri_file = opts.a[0]
 fasta_file = opts.f[0]
 outfile_name = opts.o[0]
 
+include_stop_flag = opts.s[0]
+
 print("opening blastp parse file")
-#parse_file = sys.argv[1]
 parse_file_contents = open(parse_file).read().rstrip("\n").split("\n")
 
 print("opening anno file")
-#pbri_file = sys.argv[2]
 pbri_file_contents = open(pbri_file).read().rstrip("\n").split("\n")
 
-
-#print("opening pbri fasta file")
-#fasta_file = sys.argv[3]
-#fasta_file_contents = open(fasta_file).read().rstrip("\n").split("\n")
-
-#outfile_name = sys.argv[4]
 outfile = open(outfile_name,"w")
 
 trans_dict = {} # trans_dict[trans_id] = trans line list
@@ -170,13 +164,21 @@ for line in pbri_file_contents:
         #cds_rel_end =  prot_end * 3 + pos_adjust + 3  # minus 1 to adjust to bed coords
 
         cds_rel_start = nuc_start + pos_adjust
-        cds_rel_end = nuc_end + pos_adjust - 2
+
+        if include_stop_flag == "include_stop":
+            cds_rel_end = nuc_end + pos_adjust + 1
+        else:
+            cds_rel_end = nuc_end + pos_adjust - 2
 
     elif strand == "-":
         #cds_rel_start = trans_len_dict[trans_id] - (prot_end * 3 + pos_adjust + 3)
         #cds_rel_end = trans_len_dict[trans_id] - (prot_start * 3 + pos_adjust + 1)
+        
+        if include_stop_flag == "include_stop":
+            cds_rel_start = trans_len_dict[trans_id] - (nuc_end + pos_adjust + 1)
+        else:
+            cds_rel_start = trans_len_dict[trans_id] - (nuc_end + pos_adjust - 2)
 
-        cds_rel_start = trans_len_dict[trans_id] - (nuc_end + pos_adjust - 2)
         cds_rel_end = trans_len_dict[trans_id] - (nuc_start + pos_adjust )
         
         
@@ -200,7 +202,8 @@ for line in pbri_file_contents:
     
     # look into why sometimes cds_coord_end is 0 !!!!!!
     if cds_coord_end == 0:
-        print("")
+        print("Error with cds_coord_end == 0" +trans_id)
+        sys.exit()
         
     #Check to see length is the same as sequence file
     if block_sum != trans_len_dict[trans_id]:
