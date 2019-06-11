@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_04_29'
+tc_date = 'tc_version_date_2019_05_13'
 
 #####################################################################
 #####################################################################
@@ -1557,14 +1557,16 @@ def compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand): #use t
                         all_match_flag = 0
                     elif start_match_flag == "no_match" and all_match_flag == 1:
                         # check that shorter transcript has shorter 5' end
-                        if b_trans_id == short_trans and start_diff_num < 0:
+                        if b_trans_id == short_trans and start_diff_num < 0 and diff_num_exon_flag != 0:
                             trans_comp_flag = "same_three_prime_diff_exons"
-                        elif  a_trans_id == short_trans and start_diff_num > 0:
+                        elif  a_trans_id == short_trans and start_diff_num > 0 and diff_num_exon_flag != 0:
                             trans_comp_flag = "same_three_prime_diff_exons"
-                        elif short_trans == "same" and start_diff_num < 0: # if short trans is same then same number of exons
+                        #elif short_trans == "same" and start_diff_num < 0 and diff_num_exon_flag == 0: # if short trans is same then same number of exons
+                        elif start_diff_num < 0 and diff_num_exon_flag == 0:  # if short trans is same then same number of exons
                             short_trans = b_trans_id
                             trans_comp_flag = "same_three_prime_same_exons"
-                        elif short_trans == "same" and start_diff_num > 0: # if short trans is same then same number of exons
+                        #elif short_trans == "same" and start_diff_num > 0 and diff_num_exon_flag == 0: # if short trans is same then same number of exons
+                        elif start_diff_num > 0 and diff_num_exon_flag == 0:  # if short trans is same then same number of exons
                             short_trans = a_trans_id
                             trans_comp_flag = "same_three_prime_same_exons"
                         else:
@@ -1577,14 +1579,16 @@ def compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand): #use t
                         all_match_flag = 0
                     elif end_match_flag == "no_match" and all_match_flag == 1:
                         # check that shorter transcript has shorter 5' end
-                        if b_trans_id == short_trans and end_diff_num > 0:
+                        if b_trans_id == short_trans and end_diff_num > 0 and diff_num_exon_flag != 0:
                             trans_comp_flag = "same_three_prime_diff_exons"
-                        elif  a_trans_id == short_trans and end_diff_num < 0:
+                        elif  a_trans_id == short_trans and end_diff_num < 0 and diff_num_exon_flag != 0:
                             trans_comp_flag = "same_three_prime_diff_exons"
-                        elif short_trans == "same" and end_diff_num > 0: # if short trans is same then same number of exons
+                        #elif short_trans == "same" and end_diff_num > 0 and diff_num_exon_flag == 0: # if short trans is same then same number of exons
+                        elif end_diff_num > 0 and diff_num_exon_flag == 0: # if short trans is same then same number of exons
                             short_trans = b_trans_id
                             trans_comp_flag = "same_three_prime_same_exons"
-                        elif short_trans == "same" and end_diff_num < 0: # if short trans is same then same number of exons
+                        #elif short_trans == "same" and end_diff_num < 0 and diff_num_exon_flag == 0: # if short trans is same then same number of exons
+                        elif end_diff_num < 0 and diff_num_exon_flag == 0:  # if short trans is same then same number of exons
                             short_trans = a_trans_id
                             trans_comp_flag = "same_three_prime_same_exons"
                         else:
@@ -3236,6 +3240,8 @@ class TransGroup:
         self.group_trans_dict = {}  # group_trans_dict[group num][trans id] = "longest" or "short" for no cap
         self.group_count = 0
         self.group_longest_dict = {} #group_longest_dict[group num][longest/long][trans] = 1
+
+        self.group_max_exon_dict = {} # group_max_exon_dict[group num] = max exon num
     
     def check_trans_status(self,trans_a):
         # may add on for future features
@@ -3302,6 +3308,8 @@ class TransGroup:
         self.group_longest_dict[self.group_count] = {}
         self.group_longest_dict[self.group_count]["longest"] = {}
         self.group_longest_dict[self.group_count]["longest"][trans_a] = 1
+
+        self.group_max_exon_dict[self.group_count] =  trans_obj_dict[trans_a].num_exons ######################
         
 ##############################################################################
 
@@ -3319,11 +3327,11 @@ class TransGroup:
         trans_obj_a = trans_obj_dict[trans_a]
         trans_obj_b = trans_obj_dict[trans_b]
         
-        if trans_obj_a.num_exons >= trans_obj_b.num_exons:
-            print("Error trans_a does not have fewer exons than trans_b")
-            print(trans_a + " " + trans_b)
-            print(str(trans_obj_a.num_exons) + " " + str(trans_obj_b.num_exons))
-            sys.exit()
+        #if trans_obj_a.num_exons >= trans_obj_b.num_exons: ######################################## 2019/06/07
+        #    print("Error trans_a does not have fewer exons than trans_b")
+        #    print(trans_a + " " + trans_b)
+        #    print(str(trans_obj_a.num_exons) + " " + str(trans_obj_b.num_exons))
+        #    sys.exit()
         
         #remove initial nocap group that is a self identity group
         if len(list(self.trans_group_dict[trans_a].keys())) == 1:# if only one group
@@ -3351,28 +3359,28 @@ class TransGroup:
             # a_trans has fewer exons than b_trans so it must be short
                 
    
-            # search through a groups for group mergings
-            # if a is longest in any of it's gorups then you can add other trans from those groups to b
-            for a_group_num in list(self.trans_group_dict[trans_a].keys()):
-                if a_group_num == b_group_num:
-                    continue
-
-                if log_flag == "log_on":
-                    print(str(a_group_num) + "-a and b group num-" + str(b_group_num))
-                # if trans_a is the longest in group
-                #add all shorter transcripts from a group to b group too
-                if trans_a in self.group_longest_dict[a_group_num]["longest"]:
-                    a_trans_id_list = list(self.group_trans_dict[a_group_num].keys())
-                    for a_group_trans in a_trans_id_list:
-                        self.trans_group_dict[a_group_trans][b_group_num] = "short"
-                        self.group_trans_dict[b_group_num][a_group_trans] = "short"
-                        self.trans_group_dict[a_group_trans].pop(a_group_num,None)
-                        self.group_trans_dict.pop(a_group_num,None)
-                        self.group_longest_dict.pop(a_group_num,None)
+            ## search through a groups for group mergings
+            ## if a is longest in any of it's groups then you can add other trans from those groups to b
+            #for a_group_num in list(self.trans_group_dict[trans_a].keys()):
+            #    if a_group_num == b_group_num:  ######################################## 2019/06/07
+            #        continue
+            #
+            #    if log_flag == "log_on":
+            #        print(str(a_group_num) + "-a and b group num-" + str(b_group_num))
+            #    # if trans_a is the longest in group
+            #    #add all shorter transcripts from a group to b group too
+            #    if trans_a in self.group_longest_dict[a_group_num]["longest"]:
+            #        a_trans_id_list = list(self.group_trans_dict[a_group_num].keys())
+            #        for a_group_trans in a_trans_id_list:
+            #            self.trans_group_dict[a_group_trans][b_group_num] = "short"
+            #            self.group_trans_dict[b_group_num][a_group_trans] = "short"
+            #            self.trans_group_dict[a_group_trans].pop(a_group_num,None)
+            #            self.group_trans_dict.pop(a_group_num,None)
+            #            self.group_longest_dict.pop(a_group_num,None)
         
             # dont need to redo longest and short because added a trans is all short compared to b group
 
-            
+
 ##############################################################################
 
     def merge_a_b_groups(self,trans_a,trans_b):
@@ -3406,6 +3414,7 @@ class TransGroup:
         merge_group_num = -1
         if num_trans_group_a > num_trans_group_b:
             merge_group_num = a_group_num
+            self.group_max_exon_dict[merge_group_num] = self.group_max_exon_dict[a_group_num]
             
             for group_trans in self.group_trans_dict[b_group_num]:
                 self.group_trans_dict[merge_group_num][group_trans] = 1
@@ -3417,6 +3426,7 @@ class TransGroup:
 
         elif num_trans_group_b >= num_trans_group_a:
             merge_group_num = b_group_num
+            self.group_max_exon_dict[merge_group_num] = self.group_max_exon_dict[b_group_num]
             
             for group_trans in self.group_trans_dict[a_group_num]:
                 self.group_trans_dict[merge_group_num][group_trans] = 1
@@ -3441,6 +3451,7 @@ class TransGroup:
         if merge_group_num == -1:
             print("Error with merge groups, merge_group_num == -1")
             sys.exit()
+
 
 
 ##############################################################################
@@ -3479,13 +3490,19 @@ class TransGroup:
         
         #make new group
         self.group_trans_dict[self.group_count] = {}
-        
-        for a_group_num in a_group_num_list:       
-            if self.group_trans_dict[a_group_num][trans_a].startswith("long"): # could be longest or long
+
+        self.group_max_exon_dict[self.group_count] = 0
+
+
+        for a_group_num in a_group_num_list:
+            if self.group_max_exon_dict[a_group_num] == trans_obj_dict[trans_a].num_exons: # if this trans has as many exons as longest trans in group
+            #if self.group_trans_dict[a_group_num][trans_a].startswith("long"): # could be longest or long
                 for group_trans in self.group_trans_dict[a_group_num]:
-                    self.group_trans_dict[self.group_count][group_trans] = 1
-                    self.trans_group_dict[group_trans].pop(a_group_num, None)
-                    self.trans_group_dict[group_trans][self.group_count] = 1
+                    self.group_trans_dict[self.group_count][group_trans] = 1 #make new group
+                    self.trans_group_dict[group_trans].pop(a_group_num, None) # remove old group num 
+                    self.trans_group_dict[group_trans][self.group_count] = 1 #add new group num
+
+                self.group_max_exon_dict[self.group_count] = self.group_max_exon_dict[a_group_num]
                 #remove old group
                 self.group_trans_dict.pop(a_group_num, None)
                 self.group_longest_dict.pop(a_group_num, None)
@@ -3496,11 +3513,15 @@ class TransGroup:
         b_group_num_list = list(self.trans_group_dict[trans_b].keys())
         
         for b_group_num in b_group_num_list:
-            if self.group_trans_dict[b_group_num][trans_b].startswith("long"): # could be longest or long
+            if self.group_max_exon_dict[b_group_num] == trans_obj_dict[trans_b].num_exons: # if this trans has as many exons as longest trans in group
+            #if self.group_trans_dict[b_group_num][trans_b].startswith("long"): # could be longest or long
                 for group_trans in self.group_trans_dict[b_group_num]:
-                    self.group_trans_dict[self.group_count][group_trans] = 1
-                    self.trans_group_dict[group_trans].pop(b_group_num, None)
-                    self.trans_group_dict[group_trans][self.group_count] = 1
+                    self.group_trans_dict[self.group_count][group_trans] = 1 # make new group
+                    self.trans_group_dict[group_trans].pop(b_group_num, None) # remove old group num
+                    self.trans_group_dict[group_trans][self.group_count] = 1 # add new group num
+
+                if self.group_max_exon_dict[self.group_count] < self.group_max_exon_dict[b_group_num]:
+                    self.group_max_exon_dict[self.group_count] = self.group_max_exon_dict[b_group_num]
                 #remove old group
                 self.group_trans_dict.pop(b_group_num, None)
                 self.group_longest_dict.pop(b_group_num, None)
@@ -3533,6 +3554,8 @@ class TransGroup:
             self.group_trans_dict.pop(self.group_count, None)
         
         ###################################### <<< edge of work
+
+
         
 
 ####################################################################################################
@@ -3548,66 +3571,132 @@ def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through tran
     #group_trans_dict = {} # group_trans_dict[group num][trans id] = 1
     
     #group_num = 0
+
+    #new cluster grouping algorithm
+    ############################################################################################################
+    ###########################
+    # convert trans_obj_list to trans_obj_dict for while looping
+
+    # clusters that have yet been grouped
+    ungrouped_trans_obj_dict = {}  # ungrouped_trans_obj_dict[cluster_id] =  trans_obj
+    # clusters that have been grouped
+    grouped_trans_obj_dict = {}  # grouped_trans_obj_dict[cluster_id] =  trans_obj
+    # grouped clusters that have been not been searched/been used as a hunter
+    unsearched_trans_obj_dict = {}  # unsearched_trans_obj_dict[cluster_id] =  trans_obj
+
+    for trans_obj in trans_obj_list:
+        ungrouped_trans_obj_dict[trans_obj.cluster_id] = trans_obj
+
+
+    ###########################
     
     all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
-    
-    for i in xrange(len(trans_obj_list)):
-        trans_obj = trans_obj_list[i]
-        trans_id = trans_obj.cluster_id
-        all_trans_id_dict[trans_id] = i
-        strand = trans_obj.strand
-        num_exons = trans_obj.num_exons
-        
-        a_group_check = transgroup.check_trans_status(trans_id)
-        #make groups for each transcript if no group
-        if a_group_check != 1:
-            transgroup.new_group_a(trans_id)
-        
-        for j in xrange(i+1,len(trans_obj_list)):
-            o_trans_obj = trans_obj_list[j]
 
-            o_trans_id = o_trans_obj.cluster_id
-            o_strand = o_trans_obj.strand
-            o_num_exons = o_trans_obj.num_exons
-            
-            if trans_id == o_trans_id:
-                continue
-            
-            #check strand match
-            if strand != o_strand:
-                print("Strand of transcripts within gene do not match")
-                sys.exit()
-                
-            b_group_check = transgroup.check_trans_status(o_trans_id)           
-            #make groups for each transcript if no group
-            if b_group_check != 1:
-                transgroup.new_group_a(o_trans_id)
-            
-            group_match_flag = transgroup.check_same_group(trans_id,o_trans_id)
-    
-            if group_match_flag == 1:# if they are both in the same group
-                continue
+    ungrouped_count = len(trans_obj_list)
+    unsearched_count = 0
 
-            trans_comp_flag,start_match_list,start_diff_list,end_match_list,end_diff_list,short_trans,long_trans,min_exon_num,diff_num_exon_flag = compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand)
+    while ungrouped_count > 0:
 
-            trans_match_flag = 0
-            if trans_comp_flag == "same_transcript":
-                trans_match_flag = 1
-  
-            a_group_check = transgroup.check_trans_status(trans_id)
-            b_group_check = transgroup.check_trans_status(o_trans_id)
-            
-            ##########################################Affects all downstream code!
-            if trans_match_flag != 1: # skip if there is no match
-                continue
-            
-            else: # if they are in different groups, merge groups, applies to both caps
-                transgroup.merge_a_b_groups(trans_id,o_trans_id)
+        if unsearched_count == 0:
+            ungrouped_cluster_list = list(ungrouped_trans_obj_dict.keys())
+            ungrouped_cluster_list.sort()
 
+            # hunter trans and prey trans, hunter used to look for prey
+            hunter_cluster_id = ungrouped_cluster_list[0]
+            hunter_trans_obj = ungrouped_trans_obj_dict[hunter_cluster_id]
+            # remove hunter from ungrouped
+            ungrouped_trans_obj_dict.pop(hunter_cluster_id)
+
+            unsearched_count = 1
+
+        while unsearched_count > 0 and ungrouped_count > 0:
+
+            if hunter_cluster_id == "new_hunter":
+                unsearched_cluster_list = list(unsearched_trans_obj_dict.keys())
+                unsearched_cluster_list.sort()
+                # hunter trans and prey trans, hunter used to look for prey
+                hunter_cluster_id = unsearched_cluster_list[0]
+                hunter_trans_obj = unsearched_trans_obj_dict[hunter_cluster_id]
+
+                unsearched_trans_obj_dict.pop(hunter_cluster_id)
+
+            all_trans_id_dict[hunter_cluster_id] = i
+            hunter_strand = hunter_trans_obj.strand
+            hunter_num_exons = hunter_trans_obj.num_exons
+
+            a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+            # make groups for each transcript if no group
+            if a_group_check != 1:
+                transgroup.new_group_a(hunter_cluster_id)
+
+            for prey_cluster_id in ungrouped_trans_obj_dict:
+                prey_trans_obj = ungrouped_trans_obj_dict[prey_cluster_id]
+
+                prey_strand = prey_trans_obj.strand
+                prey_num_exons = prey_trans_obj.num_exons
+
+                # this condition should not happen anymore because i delete hunters after I use them
+                if hunter_cluster_id == prey_cluster_id:
+                    continue
+
+                # check strand match
+                if hunter_strand != prey_strand:
+                    print("Strand of transcripts within gene do not match")
+                    sys.exit()
+
+                b_group_check = transgroup.check_trans_status(prey_cluster_id)
+                # make groups for each transcript if no group
+                if b_group_check != 1:
+                    transgroup.new_group_a(prey_cluster_id)
+
+                group_match_flag = transgroup.check_same_group(hunter_cluster_id, prey_cluster_id)
+
+                # this shoudn't be needed anymore due to new dict based group search
+                if group_match_flag == 1:  # if they are both in the same group
+                    continue
+
+                trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+
+                trans_match_flag = 0
+                # same_transcript means clusters should be grouped for collapsing!
+                if trans_comp_flag == "same_transcript":
+                    trans_match_flag = 1
+
+                a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+                b_group_check = transgroup.check_trans_status(prey_cluster_id)
+
+                ##########################################Affects all downstream code!
+                if trans_match_flag != 1:  # skip if there is no match
+                    continue
+
+                else:  # if they are in different groups, merge groups, applies to both caps
+                    transgroup.merge_a_b_groups(hunter_cluster_id, prey_cluster_id)
+
+                    # remove the prey cluster from dict to avoid redundant searching
+                    # ungrouped_trans_obj_dict.pop(prey_cluster_id) # remove this outside of for loop
+                    # add prey to unsearched dict
+                    unsearched_trans_obj_dict[prey_cluster_id] = prey_trans_obj
+
+            # remove grouped prey from ungrouped dict
+            for unsearched_cluster_id in unsearched_trans_obj_dict:
+                if unsearched_cluster_id in ungrouped_trans_obj_dict:
+                    ungrouped_trans_obj_dict.pop(unsearched_cluster_id)
+
+            unsearched_count = len(unsearched_trans_obj_dict)
+            # reset hunter id
+            hunter_cluster_id = "new_hunter"
+
+            ungrouped_count = len(ungrouped_trans_obj_dict)
+
+
+
+    ############################################################################################################
+    # End of new cluster grouping algorithm
 
 
     trans_group_dict = transgroup.trans_group_dict
     group_trans_dict = transgroup.group_trans_dict
+
   
     return trans_group_dict,group_trans_dict
 
@@ -3621,74 +3710,339 @@ def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through trans
     
     transgroup = TransGroup("transgroup")
     
+
+    #new cluster grouping algorithm
+    ############################################################################################################
+    ###########################
+    # convert trans_obj_list to trans_obj_dict for while looping
+
+    # clusters that have yet been grouped
+    ungrouped_trans_obj_dict = {}  # ungrouped_trans_obj_dict[cluster_id] =  trans_obj
+    # clusters that have been grouped
+    grouped_trans_obj_dict = {}  # grouped_trans_obj_dict[cluster_id] =  trans_obj
+    # grouped clusters that have been not been searched/been used as a hunter
+    unsearched_trans_obj_dict = {}  # unsearched_trans_obj_dict[cluster_id] =  trans_obj
+    # use this dict to organize clusters by num exons
+    exon_trans_obj_dict = {} # exon_trans_obj_dict[num exons][cluster id] = trans_obj
+    # use this to refresh sub exon dicts
+    sub_exon_cluster_dict = {} # sub_exon_cluster_dict[num exons][cluster id] = 1
+
+    for trans_obj in trans_obj_list:
+        #ungrouped_trans_obj_dict[trans_obj.cluster_id] = trans_obj
+        
+        this_strand = trans_obj.strand
+        this_num_exons = trans_obj.num_exons
+        
+        if this_num_exons not in exon_trans_obj_dict:
+            exon_trans_obj_dict[this_num_exons] = {}
+            sub_exon_cluster_dict[this_num_exons] = {}
+            
+        
+        exon_trans_obj_dict[this_num_exons][trans_obj.cluster_id] = trans_obj
+        sub_exon_cluster_dict[this_num_exons][trans_obj.cluster_id] = 1
+
+
+    ###########################
+
     all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
-    
-    for i in xrange(len(trans_obj_list)):
-        trans_obj = trans_obj_list[i]
-        trans_id = trans_obj.cluster_id
-        all_trans_id_dict[trans_id] = i
-        strand = trans_obj.strand
-        num_exons = trans_obj.num_exons
-        
-        a_group_check = transgroup.check_trans_status(trans_id)
-        #make groups for each transcript if no group
-        if a_group_check != 1:
-            transgroup.new_group_a(trans_id)
-        
-        for j in xrange(i+1,len(trans_obj_list)):
-            o_trans_obj = trans_obj_list[j]
 
-            o_trans_id = o_trans_obj.cluster_id
-            o_strand = o_trans_obj.strand
-            o_num_exons = o_trans_obj.num_exons
-            
-            if trans_id == o_trans_id:
-                continue
-            
-            #check strand match
-            if strand != o_strand:
-                print("Strand of transcripts within gene do not match")
-                sys.exit()
+    ungrouped_count = len(trans_obj_list)
+    unsearched_count = 0
+    
+    exon_num_list = list(exon_trans_obj_dict.keys())
+    exon_num_list.sort(reverse=True)
+    
+    #exon_num_level = exon_num_list[0]
+    exon_num_index = 0
+    
+    sub_length_cluster_dict = {} # sub_length_cluster_dict[cluster id] = 1  use this to mark degraded clusters
+    
+    while exon_num_index < len(exon_num_list):
+        
+        exon_num_level = exon_num_list[exon_num_index]
+        #initialize ungrouped for this exon num level
+        ungrouped_trans_obj_dict = {}
+        for ungroup_cluster_id in exon_trans_obj_dict[exon_num_level]:
+            ungrouped_trans_obj_dict[ungroup_cluster_id] = exon_trans_obj_dict[exon_num_level][ungroup_cluster_id]
+
+        ungrouped_count = len(ungrouped_trans_obj_dict)
+    
+        while ungrouped_count > 0:
+    
+            if unsearched_count == 0:
+                ungrouped_cluster_list = list(ungrouped_trans_obj_dict.keys())
+                ungrouped_cluster_list_sorted = []
+
+                ungrouped_strand = ungrouped_trans_obj_dict[ungrouped_cluster_list[0]].strand
+                # sort by 5' end length to deal with issue of long based nocap merging
+                ungrouped_cluster_sort_dict = {} # ungrouped_cluster_sort_dict[start][cluster id] = 1
+                for ungrouped_cluster_id in ungrouped_cluster_list:
+                    if ungrouped_strand == "+":
+                        ungrouped_five_prime = ungrouped_trans_obj_dict[ungrouped_cluster_id].start_pos  ####################################################
+                    elif ungrouped_strand == "-":
+                        ungrouped_five_prime = ungrouped_trans_obj_dict[ungrouped_cluster_id].end_pos
+                    else:
+                        print("Error with ungrouped_strand")
+                        sys.exit()
+
+                    if ungrouped_five_prime not in ungrouped_cluster_sort_dict:
+                        ungrouped_cluster_sort_dict[ungrouped_five_prime] = {}
+
+                    ungrouped_cluster_sort_dict[ungrouped_five_prime][ungrouped_cluster_id] = 1
+
+                ungrouped_cluster_five_list = list(ungrouped_cluster_sort_dict.keys())
+                if ungrouped_strand == "+":
+                    ungrouped_cluster_five_list.sort()
+                elif ungrouped_strand == "-":
+                    ungrouped_cluster_five_list.sort(reverse=True)
+                else:
+                    print("Error with ungrouped_strand")
+                    sys.exit()
+
+                for ungrouped_five_coord in ungrouped_cluster_five_list:
+                    for ungrouped_cluster_id in list(ungrouped_cluster_sort_dict[ungrouped_five_coord].keys()):
+                        ungrouped_cluster_list_sorted.append(ungrouped_cluster_id)
+
+
+
+                ungrouped_cluster_list = ungrouped_cluster_list_sorted
+    
+                # hunter trans and prey trans, hunter used to look for prey
+                hunter_cluster_id = ungrouped_cluster_list[0]
+                hunter_trans_obj = ungrouped_trans_obj_dict[hunter_cluster_id]
+                # remove hunter from ungrouped
+                ungrouped_trans_obj_dict.pop(hunter_cluster_id)
+    
+                unsearched_count = 1
                 
-            b_group_check = transgroup.check_trans_status(o_trans_id)           
-            #make groups for each transcript if no group
-            if b_group_check != 1:
-                transgroup.new_group_a(o_trans_id)
             
-            #check if in same group, if so skip
-            group_match_flag = transgroup.check_same_group(trans_id,o_trans_id)
+            #use this to keep track of sub clusters that have not already been grouped with this group
+            this_sub_exon_cluster_dict = sub_exon_cluster_dict 
     
-            if group_match_flag == 1:# if they are both in the same group
-                continue
-            
-            trans_comp_flag,start_match_list,start_diff_list,end_match_list,end_diff_list,short_trans,long_trans,min_exon_num,diff_num_exon_flag = compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand)
+            while unsearched_count > 0:
+                
+                if hunter_cluster_id == "new_hunter":
+                    unsearched_cluster_list = list(unsearched_trans_obj_dict.keys())
+                    unsearched_cluster_list.sort()
+                    
+                    if len(unsearched_cluster_list) == 0:
+                        print("empty unsearched_cluster_list")
+                        print(hunter_cluster_id)
+                        print(ungrouped_trans_obj_dict)
+                        print(unsearched_count)
+                        print(ungrouped_count)
+                    # hunter trans and prey trans, hunter used to look for prey
+                    hunter_cluster_id = unsearched_cluster_list[0]
+                    hunter_trans_obj = unsearched_trans_obj_dict[hunter_cluster_id]
+    
+                    unsearched_trans_obj_dict.pop(hunter_cluster_id)
 
-            #For nocap only!!!!
-            trans_match_flag = 0
-            if trans_comp_flag == "same_transcript":
-                trans_match_flag = 1
-            elif trans_comp_flag == "same_three_prime_same_exons" :
-                trans_match_flag = 1
-            elif trans_comp_flag == "same_three_prime_diff_exons":
-                trans_match_flag = 1
-            
-            a_group_check = transgroup.check_trans_status(trans_id)
-            b_group_check = transgroup.check_trans_status(o_trans_id)
-            
-            ##########################################Affects all downstream code!
-            ###For no cap!!!
-            # only merge groups if they have the same number of exons
-            # if diff num exons then only add shorter one to longer one
-            if trans_match_flag != 1: # skip if there is no match
-                continue
+                # print("hunter: " + hunter_cluster_id )
+                #print(exon_num_list)
+    
+                all_trans_id_dict[hunter_cluster_id] = i
+                hunter_strand = hunter_trans_obj.strand
+                hunter_num_exons = hunter_trans_obj.num_exons
+    
+                a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+                # make groups for each transcript if no group
+                if a_group_check != 1:
+                    transgroup.new_group_a(hunter_cluster_id)
+    
+                ungrouped_trans_obj_list = list(ungrouped_trans_obj_dict.keys())
+                unsearched_cluster_list = list(unsearched_trans_obj_dict.keys())
+    
+                # search at same exon num level
+                ###############################################################################
+                if hunter_cluster_id not in sub_length_cluster_dict: # only search at same level if this has not been grouped with longer transcript
+                    for prey_cluster_id in ungrouped_trans_obj_dict:
+        
+                        prey_trans_obj = ungrouped_trans_obj_dict[prey_cluster_id]
+    
+                        prey_strand = prey_trans_obj.strand
+                        prey_num_exons = prey_trans_obj.num_exons
+        
+                        # this condition should not happen anymore because i delete hunters after I use them
+                        if hunter_cluster_id == prey_cluster_id:
+                            continue
+        
+                        # check strand match
+                        if hunter_strand != prey_strand:
+                            print("Strand of transcripts within gene do not match")
+                            sys.exit()
+        
+                        b_group_check = transgroup.check_trans_status(prey_cluster_id)
+                        # make groups for each transcript if no group
+                        if b_group_check != 1:
+                            transgroup.new_group_a(prey_cluster_id)
+        
+                        group_match_flag = transgroup.check_same_group(hunter_cluster_id, prey_cluster_id)
+        
+                        # this shoudn't be needed anymore due to new dict based group search
+                        if group_match_flag == 1:  # if they are both in the same group
+                            continue
+        
+                        trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+                        
+                        # print("compare_transcripts: "+hunter_trans_obj.cluster_id +"\t"+prey_trans_obj.cluster_id+"\t" +trans_comp_flag + "\t" + str(hunter_trans_obj.num_exons)+ "\t" + str(prey_trans_obj.num_exons) + "\t" + str(diff_num_exon_flag))
 
-            else: # if they are in different groups, but match
-                if num_exons == o_num_exons:   # same number of exons
-                    transgroup.merge_a_b_groups_nocap(trans_id,o_trans_id)
-                elif num_exons > o_num_exons: #add shorter to longer
-                    transgroup.add_a_to_b_group(o_trans_id,trans_id)
-                elif o_num_exons > num_exons: # add shorter to longer
-                    transgroup.add_a_to_b_group(trans_id,o_trans_id)
+                        #For nocap only!!!!
+                        trans_match_flag = 0
+                        if trans_comp_flag == "same_transcript":
+                            trans_match_flag = 1
+                        elif trans_comp_flag == "same_three_prime_same_exons" :
+                            trans_match_flag = 1
+                        #elif trans_comp_flag == "same_three_prime_diff_exons":
+                        #    trans_match_flag = 1
+        
+                        a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+                        b_group_check = transgroup.check_trans_status(prey_cluster_id)
+        
+                        ##########################################Affects all downstream code!
+                        ###For no cap!!!
+                        # only merge groups if they have the same number of exons
+                        # if diff num exons then only add shorter one to longer one
+                        if trans_match_flag != 1: # skip if there is no match
+                            continue
+        
+                        else: # if they are in different groups, but match
+                            if hunter_num_exons == prey_num_exons:   # same number of exons
+
+                                if trans_comp_flag == "same_transcript": ###################### 2019/06/07
+                                    #print(transgroup.group_trans_dict)
+                                    transgroup.merge_a_b_groups_nocap(hunter_cluster_id,prey_cluster_id)
+                                elif trans_comp_flag == "same_three_prime_same_exons" : ###################### 2019/06/07
+                                    transgroup.add_a_to_b_group(prey_cluster_id,hunter_cluster_id)
+                                else:
+                                    print("Error with match flag")
+                                    print(trans_comp_flag)
+                                    sys.exit()
+
+                                #print(transgroup.group_trans_dict)
+        
+                            #    elif hunter_num_exons > prey_num_exons: #add shorter to longer
+                            #        transgroup.add_a_to_b_group(prey_cluster_id,hunter_cluster_id)
+                            #    elif prey_num_exons > hunter_num_exons: # add shorter to longer
+                            #        transgroup.add_a_to_b_group(hunter_cluster_id,prey_cluster_id)
+
+                                # remove the prey cluster from dict to avoid redundant searching
+                                # ungrouped_trans_obj_dict.pop(prey_cluster_id) # remove this outside of for loop
+                                # add prey to unsearched dict
+                                unsearched_trans_obj_dict[prey_cluster_id] = prey_trans_obj
+        
+                    # remove grouped prey from ungrouped dict
+                    #for unsearched_cluster_id in unsearched_trans_obj_dict: #2019_06_07
+                    #    if unsearched_cluster_id in ungrouped_trans_obj_dict: #2019_06_07
+                    #        ungrouped_trans_obj_dict.pop(unsearched_cluster_id) #2019_06_07 
+        
+                    
+                
+                # search at same exon num level end
+                ###############################################################################
+                
+                
+                ################################################################################
+                # search at lower exon num level
+                prey_exon_index = exon_num_index
+                
+                #this_sub_exon_cluster_dict.pop(exon_num_list[prey_exon_index])
+
+                while prey_exon_index < len(exon_num_list):
+                    
+                    prey_exon_index += 1
+                    
+                    if prey_exon_index >= len(exon_num_list):
+                        continue
+                    
+                    prey_exon_level = exon_num_list[prey_exon_index]
+                    
+                    #initialize ungrouped for this exon num level
+                    subgrouped_trans_obj_dict = {}
+                    #for subgroup_cluster_id in exon_trans_obj_dict[prey_exon_level]:
+                    for subgroup_cluster_id in this_sub_exon_cluster_dict[prey_exon_level]:
+  
+                        subgrouped_trans_obj_dict[subgroup_cluster_id] = exon_trans_obj_dict[prey_exon_level][subgroup_cluster_id]
+                    
+                    for prey_cluster_id in subgrouped_trans_obj_dict:
+        
+                        prey_trans_obj = subgrouped_trans_obj_dict[prey_cluster_id]
+    
+                        prey_strand = prey_trans_obj.strand
+                        prey_num_exons = prey_trans_obj.num_exons
+        
+                        # this condition should not happen anymore because i delete hunters after I use them
+                        if hunter_cluster_id == prey_cluster_id:
+                            continue
+        
+                        # check strand match
+                        if hunter_strand != prey_strand:
+                            print("Strand of transcripts within gene do not match")
+                            sys.exit()
+        
+                        b_group_check = transgroup.check_trans_status(prey_cluster_id)
+                        # make groups for each transcript if no group
+                        if b_group_check != 1:
+                            transgroup.new_group_a(prey_cluster_id)
+        
+                        group_match_flag = transgroup.check_same_group(hunter_cluster_id, prey_cluster_id)
+        
+                        # this shoudn't be needed anymore due to new dict based group search
+                        if group_match_flag == 1:  # if they are both in the same group
+                            continue
+        
+                        trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+        
+                        #For nocap only!!!!
+                        trans_match_flag = 0
+                        if trans_comp_flag == "same_transcript":
+                            #trans_match_flag = 1
+                            print("Error with subgroup seach same_transcript")
+                            sys.exit()
+                        elif trans_comp_flag == "same_three_prime_same_exons" :
+                            #trans_match_flag = 1
+                            print("Error with subgroup seach same_three_prime_same_exons")
+                            sys.exit()
+                        elif trans_comp_flag == "same_three_prime_diff_exons":
+                            trans_match_flag = 1
+        
+                        a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+                        b_group_check = transgroup.check_trans_status(prey_cluster_id)
+        
+                        ##########################################Affects all downstream code!
+                        ###For no cap!!!
+                        # only merge groups if they have the same number of exons
+                        # if diff num exons then only add shorter one to longer one
+                        if trans_match_flag != 1: # skip if there is no match
+                            continue
+        
+                        else: # if they are in different groups, but match
+                            if hunter_num_exons == prey_num_exons:   # same number of exons
+                                #transgroup.merge_a_b_groups_nocap(hunter_cluster_id,prey_cluster_id)
+                                print("Error with subgroup exon match: equal")
+                                sys.exit()
+                            elif hunter_num_exons > prey_num_exons: #add shorter to longer
+                                transgroup.add_a_to_b_group(prey_cluster_id,hunter_cluster_id)
+                                sub_length_cluster_dict[prey_cluster_id] = 1
+                                
+                                #this_sub_exon_cluster_dict[prey_exon_level].pop(prey_cluster_id)  ######### 2019/06/06
+                                
+                            elif prey_num_exons > hunter_num_exons: # add shorter to longer
+                                #transgroup.add_a_to_b_group(hunter_cluster_id,prey_cluster_id)
+                                print("Error with subgroup exon match: hunter smaller")
+                                sys.exit()
+
+                # reset hunter id
+                hunter_cluster_id = "new_hunter"
+                unsearched_count = len(unsearched_trans_obj_dict)
+                ungrouped_count = len(ungrouped_trans_obj_dict)
+    
+        exon_num_index += 1
+                ################################################################################
+
+
+
+    ############################################################################################################
+    # End of new cluster grouping algorithm
 
     trans_group_dict = transgroup.trans_group_dict
     group_trans_dict = transgroup.group_trans_dict
