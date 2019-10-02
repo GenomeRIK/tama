@@ -45,7 +45,11 @@ pbri_file = opts.a[0]
 fasta_file = opts.f[0]
 outfile_name = opts.o[0]
 
-include_stop_flag = opts.s[0]
+if not opts.s:
+    include_stop_flag = "no_stop_codon"
+else:
+    include_stop_flag = opts.s[0]
+
 
 print("opening blastp parse file")
 parse_file_contents = open(parse_file).read().rstrip("\n").split("\n")

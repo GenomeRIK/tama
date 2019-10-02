@@ -23,7 +23,10 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_05_13'
+tc_date = 'tc_version_date_2019_09_30'
+
+### Notes on changes
+# Added new identiy calculation method along with ability to choose which method to use
 
 #####################################################################
 #####################################################################
@@ -37,6 +40,7 @@ ap.add_argument('-x', type=str, nargs=1, help='Capped flag: capped or no_cap')
 ap.add_argument('-e', type=str, nargs=1, help='Collapse exon ends flag: common_ends or longest_ends (default common_ends)')
 ap.add_argument('-c', type=str, nargs=1, help='Coverage (default 99)')
 ap.add_argument('-i', type=str, nargs=1, help='Identity (default 85)')
+ap.add_argument('-icm', type=str, nargs=1, help='Identity calculation method (default ident_cov for including coverage) (alternate is ident_map for excluding hard and soft clipping)')
 ap.add_argument('-a', type=str, nargs=1, help='5 prime threshold (default 10)')
 ap.add_argument('-m', type=str, nargs=1, help='Exon/Splice junction threshold (default 10)')
 ap.add_argument('-z', type=str, nargs=1, help='3 prime threshold (default 10)')
@@ -102,6 +106,16 @@ if not opts.i:
     identity_threshold = 85.0
 else:
     identity_threshold = float(opts.i[0])
+    
+if not opts.icm:
+    print("Default identity calculation method: ident_cov")
+    ident_calc_method = 'ident_cov'
+else:
+    ident_calc_method = str(opts.icm[0])
+    if ident_calc_method != "ident_cov" and ident_calc_method != "ident_map":
+        print("Error with -icm input. Should be ident_cov or ident_map. Run terminated.")
+        print(ident_calc_method)
+        sys.exit()
     
 if not opts.a:
     print("Default 5 prime threshold: 10")
@@ -1034,10 +1048,19 @@ class Transcript:
     
     def calc_identity(self):
         
-        nonmatch_count = self.h_count + self.s_count + self.i_count + self.d_count + self.mis_count
-        percent_identity = float(self.seq_length - nonmatch_count) / float(self.seq_length)
-        percent_identity = percent_identity * 100.0
+        map_seq_length = self.seq_length - self.h_count - self.s_count
         
+        if ident_calc_method == "ident_cov":
+        
+            nonmatch_count = self.h_count + self.s_count + self.i_count + self.d_count + self.mis_count
+            percent_identity = float(self.seq_length - nonmatch_count) / float(self.seq_length)
+            percent_identity = percent_identity * 100.0
+        
+        elif ident_calc_method == "ident_map":
+            nonmatch_count = self.i_count + self.d_count + self.mis_count
+            percent_identity = float(map_seq_length - nonmatch_count) / float(map_seq_length)
+            percent_identity = percent_identity * 100.0
+            
         self.percent_identity = percent_identity
         
         return percent_identity
@@ -4206,7 +4229,7 @@ def compare_multimaps(trans_obj_a,trans_obj_b): ### Added this 2019/03/04
     a_pass_flag = 0
     b_pass_flag = 0
     
-    if a_percent_cov > coverage_threshold  and a_percent_identity > identity_threshold:
+    if a_percent_cov > coverage_threshold and a_percent_identity > identity_threshold:
         a_pass_flag = 1
     
     if b_percent_cov > coverage_threshold  and b_percent_identity > identity_threshold:
