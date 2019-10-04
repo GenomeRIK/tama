@@ -18,7 +18,7 @@ ap.add_argument('-o', type=str, nargs=1, help='Output file prefix')
 
 ap.add_argument('-d', type=str, nargs=1, help='Ignore duplicate read name warning with -d dup_ok, default is to flag duplicates and terminate early.')
 
-ap.add_argument('-cc', type=str, nargs=1, help='Cupcake flag indicates that merge file is from cupcake output. Use -cc cupcake to turn on. Default is TAMA output.')
+ap.add_argument('-mt', type=str, nargs=1, help='Merge type flag indicates the type of merge file used. Use -mt cupcake for cupcake file. Default is TAMA output.')
 
 
 opts = ap.parse_args()
@@ -53,15 +53,15 @@ else:
         print("Terminating early.")
         sys.exit()
 
-cupcake_flag = "tama"
+merge_type_flag = "tama"
 
-if not opts.cc:
+if not opts.mt:
     print("Default is tama flag for TAMA merge file.")
     duplicate_flag = "tama"
 else:
-    cupcake_flag = opts.cc[0]
-    if cupcake_flag != "tama" and cupcake_flag != "cupcake":
-        print("Error with -cc input. Should be either tama or cupcake.")
+    merge_type_flag = opts.mt[0]
+    if merge_type_flag != "tama" and merge_type_flag != "cupcake" and  merge_type_flag != "filter":
+        print("Error with -mt input. Should be tama or cupcake or filter.")
         print("Terminating early.")
         sys.exit()
 
@@ -214,7 +214,7 @@ if merge_file != "no_merge":
     
     for line in merge_file_contents:
 
-        if cupcake_flag == "tama" :
+        if merge_type_flag == "tama" :
             line_split = line.split("\t")
     
             id_line = line_split[3]
@@ -268,13 +268,15 @@ if merge_file != "no_merge":
             for read_id in read_list:
                 gene_read_dict[merge_gene_id][source_name][read_id] = 1
 
-        elif  cupcake_flag == "cupcake" :
+        elif  merge_type_flag == "cupcake" :
             line_split = line.split("\t")
             #PB.2.1  transcript/111304,transcript/110485,transcript/89421,transcript/75502
             #PB.2.15 transcript/95975,transcript/96463
             merge_trans_id = line_split[0]
             source_trans_id_line = line_split[1]
             source_trans_id_list = source_trans_id_line.split(",")
+            
+            source_name = source_list[0] # should only be one source
 
             for source_trans_id in source_trans_id_list:
                 merge_gene_id = merge_trans_id.split(".")[0] + "." + merge_trans_id.split(".")[1]
@@ -305,8 +307,56 @@ if merge_file != "no_merge":
 
                 for read_id in read_list:
                     gene_read_dict[merge_gene_id][source_name][read_id] = 1
+        
 
+        elif  merge_type_flag == "filter" : #########################################
+            line_split = line.split("\t")
+            
+            if line.startswith("old_gene_id"):
+                continue
+            
+            #old_gene_id     old_trans_id    source_line     num_reads       new_gene_id     new_trans_id    num_exons
+            #G1      G1.1    a,b     6       G1      G1.1    1
+            #G1      G1.2    b       6       G1      removed_transcript      1
 
+            merge_trans_id = line_split[5]
+            source_trans_id = line_split[1]
+            merge_gene_id = line_split[4]
+            
+            if merge_trans_id == "removed_transcript": # skip the transcripts that were removed in filtering
+                continue
+
+            source_name = source_list[0] # should only be one source
+            
+
+            # collect gene id and gene read num info
+            if merge_trans_id not in trans_gene_dict:
+                trans_gene_dict[merge_trans_id] = merge_gene_id
+            else:
+                if merge_gene_id != trans_gene_dict[merge_trans_id]:
+                    print("Error with trans_id having multiple gene_id.")
+                    print("Terminating early.")
+                    print(merge_gene_id)
+                    print(trans_gene_dict[merge_trans_id])
+                    sys.exit()
+
+            if merge_trans_id not in merge_trans_dict:
+                merge_trans_dict[merge_trans_id] = {}
+                merge_trans_list.append(merge_trans_id)
+            if source_name not in merge_trans_dict[merge_trans_id] :
+                merge_trans_dict[merge_trans_id][source_name] = {}
+
+            read_list = list(source_trans_read_dict[source_name][source_trans_id].keys())
+
+            merge_trans_dict[merge_trans_id][source_name][source_trans_id] = read_list
+
+            if merge_gene_id not in gene_read_dict:
+                gene_read_dict[merge_gene_id] = {}
+            if source_name not in gene_read_dict[merge_gene_id]:
+                gene_read_dict[merge_gene_id][source_name] = {}
+
+            for read_id in read_list:
+                gene_read_dict[merge_gene_id][source_name][read_id] = 1
     
     
     for merge_trans_id in merge_trans_list:
