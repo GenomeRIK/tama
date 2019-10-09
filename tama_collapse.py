@@ -4220,11 +4220,11 @@ def detect_rt_switch(trans_obj): # looks for complementary structure in intronic
 def compare_multimaps(trans_obj_a,trans_obj_b): ### Added this 2019/03/04
     
     best_map_id = "na"
-    a_percent_cov = trans_obj_a.self.percent_cov
-    b_percent_cov = trans_obj_b.self.percent_cov
+    a_percent_cov = trans_obj_a.percent_cov
+    b_percent_cov = trans_obj_b.percent_cov
     
-    a_percent_identity = trans_obj_a.self.percent_identity
-    b_percent_identity = trans_obj_b.self.percent_identity
+    a_percent_identity = trans_obj_a.percent_identity
+    b_percent_identity = trans_obj_b.percent_identity
     
     a_pass_flag = 0
     b_pass_flag = 0
