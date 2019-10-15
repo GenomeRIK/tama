@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_09_30'
+tc_date = 'tc_version_date_2019_10_15'
 
 ### Notes on changes
 # Added new identiy calculation method along with ability to choose which method to use
@@ -4628,9 +4628,16 @@ if total_group_count == 0:
     print("Error, no groups found!")
     sys.exit()
 
+multimap_missing_group_flag = 0
 
 for i in xrange(total_group_count+1):
-    
+
+    if i not in group_trans_list_dict:
+        print("Missing group num, check for multi-maps in SAM file")
+        print("This should only occur if you have a multi-map site that no reads are preferring.")
+        multimap_missing_group_flag = 1
+        continue
+
     trans_list = group_trans_list_dict[i]
     
     forward_trans_list = []
@@ -4941,9 +4948,11 @@ for cov_line in cov_group_var_list:
     outfile_varcov.write(varcov_file_line)
     outfile_varcov.write("\n")
     
-    
+
 prev_time = track_time(start_time,prev_time)
     
-
+if multimap_missing_group_flag == 1:
+    print("Missing group num, check for multi-maps in SAM file")
+    print("This should only occur if you have a multi-map site that no reads are preferring.")
 
 print("TAMA Collapse has successfully finished running!")
