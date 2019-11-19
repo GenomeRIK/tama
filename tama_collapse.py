@@ -23,10 +23,10 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_10_15'
+tc_date = 'tc_version_date_2019_11_19'
 
 ### Notes on changes
-# Added new identiy calculation method along with ability to choose which method to use
+# Fixed issue with coordinates of soft clipped variants in the variant output file. 
 
 #####################################################################
 #####################################################################
@@ -599,6 +599,14 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
             var_pos = genome_pos - s_count
             var_seq = seq_list[seq_start:seq_end]
             var_type = cig_flag
+            
+            ###### change made 2019/11/19
+            #correct for soft clips at end of mapping
+            num_cig_entities = len(cig_dig_list)
+            if i == num_cig_entities - 1:
+                var_pos = genome_pos + 1 - s_count
+            ###### change made 2019/11/19
+            
             update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
             ### for variation detection end
             
