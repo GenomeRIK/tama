@@ -19,7 +19,10 @@ Author: Richard I. Kuo
 
 This script merges transcriptome/genome annotations.
 
-Last Updated: 2019/07/01
+Last Updated: 2019/12/19
+
+Added more informative error message for issues with strand information from input bed files. 
+
 """
 
 tm_version = 'tm0.0'
@@ -3175,6 +3178,11 @@ def process_trans_group(trans_line_list, total_gene_count):
             reverse_trans_list.append(trans_obj)
         else:
             print("Error with strand information")
+            issue_trans_id = trans_obj.trans_id
+            issue_strand = trans_obj.strand
+            issue_source = trans_obj.source_id
+            this_error_line = "Source: " + issue_source + " Trans: " + issue_trans_id + " Strand: " + issue_strand
+            print(this_error_line)
             sys.exit()
     
     forward_gene_start_trans_dict,forward_start_gene_list = gene_group(forward_trans_list)
