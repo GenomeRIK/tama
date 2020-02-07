@@ -229,8 +229,19 @@ if merge_file != "no_merge":
                 source_name = source_list[0]
                 source_trans_id = source_trans_id_line
             else:
-                source_name = source_trans_id_line.split("_")[0]
-                source_trans_id = source_trans_id_line.split("_")[1]
+
+                num_underscore_fields = len(source_trans_id_line.split("_"))
+
+                if num_underscore_fields == 2:
+                    source_name = source_trans_id_line.split("_")[0]
+                    source_trans_id = source_trans_id_line.split("_")[1]
+                else:
+                    source_trans_id = source_trans_id_line.split("_")[num_underscore_fields - 1]
+                    source_name_underscore_list = []
+                    for i in xrange(num_underscore_fields-1):
+                        source_name_underscore_list.append(source_trans_id_line.split("_")[i])
+
+                    source_name = "_".join(source_name_underscore_list)
 
             merge_gene_id = merge_trans_id.split(".")[0]
 

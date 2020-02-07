@@ -50,6 +50,7 @@ ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors 
 ap.add_argument('-lde', type=str, nargs=1, help='Threshold for amount of local density error near splice junctions that is allowed (default is 1000 errors which practically means no threshold is applied)')
 ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this to pick the symbol used to represent matches in the simple error string for LDE output.')
 
+
 ap.add_argument('-b', type=str, nargs=1, help='Use BAM instead of SAM')
 
 
@@ -2602,7 +2603,15 @@ def collapse_transcripts(trans_obj_list,fiveprime_cap_flag,collapse_flag): #use 
                 print(trans_obj.exon_start_list)
                 print(trans_obj.exon_end_list)
 
-            sys.exit()
+            if long_e_start < long_e_end:
+                best_e_start = long_e_start
+                best_e_end = long_e_end
+            else:
+                print("Error long_e_start is greater than long_e_end")
+                print(long_e_start)
+                print(long_e_end)
+
+                sys.exit()
         
         collapse_start_list.append(best_e_start)
         collapse_end_list.append(best_e_end)
@@ -4632,7 +4641,8 @@ trans_check_count = 0 ##########################################################
 prev_time = track_time(start_time,prev_time)
 print("going through groups: " + str(total_group_count))
 
-if total_group_count == 0:
+if len(list(group_trans_list_dict.keys())) == 0:
+#  if total_group_count == 0:
     print("Error, no groups found!")
     sys.exit()
 
