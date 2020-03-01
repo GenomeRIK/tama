@@ -156,7 +156,25 @@ for line in filelist_file_contents:
             for this_source_read_line in this_read_line_split:
                 this_source_name = this_source_read_line.split(":")[0]
 
-                read_list = this_source_read_line.split(":")[1].split(",")
+
+                #############
+                # use this to deal with nanopore read ID's with the ":" character in them
+                this_source_read_line_split = this_source_read_line.split(":")
+
+                if len(this_source_read_line_split) > 2:
+
+                    new_this_source_read_line_split = []
+                    for i in xrange(len(this_source_read_line_split) - 1):
+                        new_this_source_read_line_split.append(this_source_read_line_split[i+1])
+
+                    new_this_source_read_line = ":".join(new_this_source_read_line_split)
+                    read_list = new_this_source_read_line.split(",")
+
+                else:
+
+                    read_list = this_source_read_line.split(":")[1].split(",")
+                #############
+
 
                 for read_id in read_list:
                     source_trans_read_dict[source_name][trans_id][read_id] = 1
