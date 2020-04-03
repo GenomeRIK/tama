@@ -16,7 +16,7 @@ ap = argparse.ArgumentParser(description='This script parses information from th
 
 ap.add_argument('-b', type=str, nargs=1, help='blastp file (required)')
 ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
-
+ap.add_argument('-f', type=str, nargs=1, help='Format of input DB ID (default is UniRef, use "ensembl" for Ensembl generated DB)')
 
 opts = ap.parse_args()
 
@@ -29,12 +29,18 @@ if not opts.b:
 if not opts.o:
     print("output name missing")
     missing_arg_flag = 1
+if not opts.f:
+    format_type = "uniref"
+else:
+    format_type = opts.f[0]
+
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
 
 blastp_file = opts.b[0]
 outfile_name = opts.o[0]
+
 
 print("opening blastp file")
 #blastp_file = sys.argv[1]
@@ -97,6 +103,9 @@ pos_denominator = 0
 hit_start_flag = 0
 empty_line_count = 0
 
+s_name_flag = 0
+s_name_list = []
+
 query_list = [] # list of dicts for query hits
 query_dict = {}
 
@@ -115,6 +124,67 @@ query_id_line_flag = 0
 
 
 for line in blastp_file_contents:
+
+    # check that we are not in the middle of getting the subject name
+    if s_name_flag == 1:
+
+        # >E1C721 Uncharacterized protein OS=Gallus gallus GN=LOC425783 PE=4 SV=2
+
+        # > sp|Q9HC56|PCDH9_HUMAN Protocadherin-9 OS=Homo sapiens OX=9606
+
+        # >ENSGALP00000050219.1 pep chromosome:GRCg6a:MT:13071:14888:1 gene:ENSGALG00000029500.1
+        # transcript:ENSGALT00000047001.1 gene_biotype:protein_coding
+        # transcript_biotype:protein_coding gene_symbol:ND5 description:NADH-ubiquinone
+        # oxidoreductase chain 5  [Source:UniProtKB/Swiss-Prot;Acc:P18940]
+        # Length=605
+
+
+        # length of query is taken care of after this
+        if line.startswith("Length="):
+
+            s_name = "".join(s_name_list)
+
+            if format_type == "uniref":
+                s_name = s_name.split()[0]
+
+            elif format_type == "ensembl":
+                this_gene_id = ""
+                this_trans_id = ""
+                this_desc_id = ""
+                this_transcript_biotype = ""
+
+                s_name_split = s_name.split()
+
+                for s_name_field in s_name_split:
+                    if s_name_field.startswith("gene:"):
+                        this_gene_id = s_name_field.split(":")[1]
+                    if s_name_field.startswith("transcript:"):
+                        this_trans_id = s_name_field.split(":")[1]
+
+                    if s_name_field.startswith("description:"):
+                        this_desc_id = s_name_field.split(":")[1]
+
+                    if s_name_field.startswith("transcript_biotype:"):
+                        this_transcript_biotype = s_name_field.split(":")[1]
+
+                s_name = ",".join([this_gene_id,this_trans_id])
+
+
+
+
+
+            s_name_flag = 0
+            s_name_list = []
+
+            if s_len == 0:
+                s_len = line.split("=")[1]
+
+            continue
+
+        else:
+            s_name_list.append(line)
+
+
     
     #because the query name wraps around to new lines this is needed to collect full names
     if query_id_line_flag > 0:
@@ -231,20 +301,36 @@ for line in blastp_file_contents:
 
         # > sp|Q9HC56|PCDH9_HUMAN Protocadherin-9 OS=Homo sapiens OX=9606
 
-        s_name = line.split(">")[1]
-        s_name = s_name.lstrip()
-        s_name = s_name.split()[0]
+        # >ENSGALP00000050219.1 pep chromosome:GRCg6a:MT:13071:14888:1 gene:ENSGALG00000029500.1
+        # transcript:ENSGALT00000047001.1 gene_biotype:protein_coding
+        # transcript_biotype:protein_coding gene_symbol:ND5 description:NADH-ubiquinone
+        # oxidoreductase chain 5  [Source:UniProtKB/Swiss-Prot;Acc:P18940]
+        # Length=605
+
+        # use this to add onto to subject name in case of text wrap around in file
+        s_name_list = []
+
+
+        s_name_line = line[1:] # remove > character from beginning
+        s_name_line = s_name_line.lstrip()
+        # s_name_line = s_name_line.split()[0]
         s_len = 0
         hit_start_flag = 1
         empty_line_count = 0
+
+        s_name_list.append(s_name_line)
+
+        s_name_flag = 1
+
         continue
-    
+
+    # moved this statement to beginning of loop
     # length of query is take care of in first statement of loop
-    if line.startswith("Length="):
-        if s_len == 0:
-            s_len = line.split("=")[1]
-            
-        continue
+#    if line.startswith("Length="):
+#        if s_len == 0:
+#            s_len = line.split("=")[1]
+#
+#        continue
     
     if line.startswith(" Score"):
         e_val = line.split(",")[1].split("= ")[1]

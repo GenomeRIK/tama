@@ -221,12 +221,15 @@ class Transcript:
                 if int(self.cds_start) == int(self.t_start) :  # no start codon because cds begins at beginning of transcript
                     start_codon_flag = 0
 
-
+                # CDS region starts or ends in this exon
                 region_type = "CDS"
                 frame = "."
-                outline = format_exon_line(region_type, frame, self.chrom, str(cds_e_start), str(cds_e_end), self.strand,self.gene_id, self.trans_id, source, e_num, self.prot_id,self.degrade_flag, self.match_flag, self.nmd_flag)
-                outfile.write(outline)
-                outfile.write("\n")
+
+                # check that the cds start is not after the cds end #############
+                if cds_e_end >= cds_e_start:
+                    outline = format_exon_line(region_type, frame, self.chrom, str(cds_e_start), str(cds_e_end), self.strand,self.gene_id, self.trans_id, source, e_num, self.prot_id,self.degrade_flag, self.match_flag, self.nmd_flag)
+                    outfile.write(outline)
+                    outfile.write("\n")
 
                 if start_codon_flag == 1:
                     region_type = "start_codon"
@@ -331,12 +334,14 @@ class Transcript:
                 if int(self.cds_end) == int(self.t_end) :  # no start codon because cds begins at beginning of transcript
                     start_codon_flag = 0
 
-
+                # CDS region starts or ends in this exon
                 region_type = "CDS"
                 frame = "."
-                outline = format_exon_line(region_type, frame, self.chrom, str(cds_e_start), str(cds_e_end), self.strand,self.gene_id, self.trans_id, source, e_num, self.prot_id,self.degrade_flag, self.match_flag, self.nmd_flag)
-                outfile.write(outline)
-                outfile.write("\n")
+                # check that the cds start is not after the cds end #############
+                if cds_e_end >= cds_e_start:
+                    outline = format_exon_line(region_type, frame, self.chrom, str(cds_e_start), str(cds_e_end), self.strand,self.gene_id, self.trans_id, source, e_num, self.prot_id,self.degrade_flag, self.match_flag, self.nmd_flag)
+                    outfile.write(outline)
+                    outfile.write("\n")
 
                 if start_codon_flag == 1:
                     region_type = "start_codon"
@@ -369,9 +374,11 @@ class Transcript:
 
             region_type = "five_prime_utr"
             frame = "."
-            outline = format_exon_line(region_type, frame, self.chrom, str(five_utr_start), str(five_utr_end), self.strand,self.gene_id, self.trans_id, source, five_utr_e_num, self.prot_id, self.degrade_flag,self.match_flag, self.nmd_flag)
-            outfile.write(outline)
-            outfile.write("\n")
+
+            if five_utr_end >= five_utr_start:
+                outline = format_exon_line(region_type, frame, self.chrom, str(five_utr_start), str(five_utr_end), self.strand,self.gene_id, self.trans_id, source, five_utr_e_num, self.prot_id, self.degrade_flag,self.match_flag, self.nmd_flag)
+                outfile.write(outline)
+                outfile.write("\n")
 
         for i in xrange(len(three_utr_start_list)):
             three_utr_start = three_utr_start_list[i]
@@ -380,9 +387,10 @@ class Transcript:
 
             region_type = "three_prime_utr"
             frame = "."
-            outline = format_exon_line(region_type, frame, self.chrom, str(three_utr_start), str(three_utr_end), self.strand,self.gene_id, self.trans_id, source, three_utr_e_num, self.prot_id, self.degrade_flag,self.match_flag, self.nmd_flag)
-            outfile.write(outline)
-            outfile.write("\n")
+            if three_utr_end >= three_utr_start:
+                outline = format_exon_line(region_type, frame, self.chrom, str(three_utr_start), str(three_utr_end), self.strand,self.gene_id, self.trans_id, source, three_utr_e_num, self.prot_id, self.degrade_flag,self.match_flag, self.nmd_flag)
+                outfile.write(outline)
+                outfile.write("\n")
             
             
             
