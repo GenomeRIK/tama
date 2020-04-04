@@ -93,10 +93,38 @@ def id_parser(id_line):
             ens_gene_id = id_split[2]
             ens_trans_id = id_split[3]
 
+            if "ENS" not in ens_gene_id:
+                print("Ensembl gene ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
+                print(ens_gene_id)
+
+                new_line = "Ensembl gene ID is not right. You may be using the wrong parameters. Please see wiki for manual."
+                outfile.write(new_line)
+                outfile.write("\n")
+
+                outfile.write(ens_gene_id)
+                outfile.write("\n")
+
+
+
+                sys.exit()
+
+            if "ENS" not in ens_trans_id:
+                print("Ensembl transcript ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
+                print(ens_trans_id)
+
+                new_line = "Ensembl transcript ID is not right. You may be using the wrong parameters. Please see wiki for manual."
+                outfile.write(new_line)
+                outfile.write("\n")
+
+                outfile.write(ens_trans_id)
+                outfile.write("\n")
+
+                sys.exit()
+
             other_id_list = id_split[4:]
 
         if filter_level == "only_match":
-            if ens_gene_id == "":
+            if "ENS" not in ens_gene_id:
                 output_flag = "fail"
 
 
