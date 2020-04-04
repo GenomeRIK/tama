@@ -93,6 +93,7 @@ def id_parser(id_line):
             ens_gene_id = id_split[2]
             ens_trans_id = id_split[3]
 
+            # check that the right parameters are being used
             if "ENS" not in ens_gene_id:
                 print("Ensembl gene ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
                 print(ens_gene_id)
@@ -108,6 +109,7 @@ def id_parser(id_line):
 
                 sys.exit()
 
+            # check that the right parameters are being used
             if "ENS" not in ens_trans_id:
                 print("Ensembl transcript ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
                 print(ens_trans_id)
@@ -162,6 +164,36 @@ def id_parser(id_line):
 
                 ens_gene_id = ens_id_split[0]
                 ens_trans_id = ens_id_split[1]
+
+                # check that the right parameters are being used
+                if "ENS" not in ens_gene_id:
+                    print("Ensembl gene ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
+                    print(ens_gene_id)
+
+                    new_line = "Ensembl gene ID is not right. You may be using the wrong parameters. Please see wiki for manual."
+                    outfile.write(new_line)
+                    outfile.write("\n")
+
+                    outfile.write(ens_gene_id)
+                    outfile.write("\n")
+
+                    sys.exit()
+
+                # check that the right parameters are being used
+                if "ENS" not in ens_trans_id:
+                    print("Ensembl transcript ID is not right. You may be using the wrong parameters. Please see wiki for manual.")
+                    print(ens_trans_id)
+
+                    new_line = "Ensembl transcript ID is not right. You may be using the wrong parameters. Please see wiki for manual."
+                    outfile.write(new_line)
+                    outfile.write("\n")
+
+                    outfile.write(ens_trans_id)
+                    outfile.write("\n")
+
+                    sys.exit()
+
+
             else:
                 ens_gene_id = tama_gene_id
                 ens_trans_id = tama_trans_id
