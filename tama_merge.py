@@ -19,7 +19,7 @@ Author: Richard I. Kuo
 
 This script merges transcriptome/genome annotations.
 
-Last Updated: 2019/12/19
+Last Updated: 2020/05/31
 
 Added more informative error message for issues with strand information from input bed files. 
 
@@ -123,13 +123,13 @@ outfile_bed = open(bed_outfile_name,"w")
 
 trans_report_outfile_name = outfile_prefix + "_trans_report.txt"
 outfile_trans_report = open(trans_report_outfile_name,"w")
-trans_report_line = "\t".join(["transcript_id","num_clusters","sources","start_wobble_list","end_wobble_list","exon_start_support","exon_end_support"])
+trans_report_line = "\t".join(["transcript_id","num_clusters","sources","start_wobble_list","end_wobble_list","exon_start_support","exon_end_support","all_source_trans"])
 outfile_trans_report.write(trans_report_line)
 outfile_trans_report.write("\n")
 
 gene_report_outfile_name = outfile_prefix + "_gene_report.txt"
 outfile_gene_report = open(gene_report_outfile_name,"w")
-gene_report_line = "\t".join(["gene_id","num_clusters","num_final_trans","sources","chrom", "start","end"])
+gene_report_line = "\t".join(["gene_id","num_clusters","num_final_trans","sources","chrom", "start","end","source_genes","source_summary"])
 outfile_gene_report.write(gene_report_line)
 outfile_gene_report.write("\n")
 
@@ -518,6 +518,15 @@ class Merged:
         
         trans_report_list.append(e_start_trans_support)
         trans_report_list.append(e_end_trans_support)
+
+        ####################
+        # 2020/05/31
+        all_source_trans_line = ",".join(self.trans_list)
+
+        trans_report_list.append(all_source_trans_line)
+
+        # 2020/05/31
+        ###################
        
         trans_report_line = "\t".join(trans_report_list)
         
@@ -3081,7 +3090,7 @@ def reverse_complement(seq_list):
     
     return rev_comp_list
 
-def format_gene_report_line(trans_obj_list,total_gene_count,total_final_trans_count):
+def format_gene_report_line(trans_obj_list,total_gene_count,total_final_trans_count,track_gene_source):
     
     gene_id = "G" + str(total_gene_count)
     
@@ -3129,6 +3138,39 @@ def format_gene_report_line(trans_obj_list,total_gene_count,total_final_trans_co
     gene_report_list.append(gene_chrom)
     gene_report_list.append(str(gene_start))
     gene_report_list.append(str(gene_end))
+
+
+    ###########################
+    # add gene source info 2020/05/31
+
+    all_track_source_dict = {} # all_track_source_dict[source] = count
+    track_gene_source_split = track_gene_source.split(",")
+
+    source_order_list = []
+
+    for track_source_gene in track_gene_source_split:
+        track_source = track_source_gene.split("_")[0]
+        if track_source not in all_track_source_dict:
+            all_track_source_dict[track_source] = 0
+            source_order_list.append(track_source)
+
+        all_track_source_dict[track_source] += 1
+
+    track_source_list = []
+    for track_source in source_order_list:
+        source_gene_count = all_track_source_dict[track_source]
+
+        this_track_source_line = track_source + ":" + str(source_gene_count)
+
+        track_source_list.append(this_track_source_line)
+
+    all_track_source_line = ",".join(track_source_list)
+
+    gene_report_list.append(str(track_gene_source))
+    gene_report_list.append(str(all_track_source_line))
+
+    # add gene source info 2020/05/31
+    ###########################
     
     gene_report_line = "\t".join(gene_report_list)
     
@@ -3293,7 +3335,10 @@ def process_trans_group(trans_line_list, total_gene_count):
                 
             
             sorted_merge_obj_list = sort_transcripts(merge_obj_list,trans_obj_dict)
-            
+
+            # keep track of gene sources
+            track_gene_source_dict = {} # track_gene_source_dict[source_gene_id] = 1
+
             trans_count = 0
             for merged_obj in sorted_merge_obj_list:
                 trans_count += 1
@@ -3310,6 +3355,24 @@ def process_trans_group(trans_line_list, total_gene_count):
                 #write out to transcript merge report file
                 # check for merge source id in case of using source ID's for merge ID's
                 for merged_trans_id in merged_obj.merged_trans_dict:
+
+                    #########################
+                    # use this for keeping track of source genes for gene report
+                    track_merge_gene_id_split = merged_trans_id.split(".")
+                    if len(track_merge_gene_id_split) > 2:
+                        track_merge_gene_id_list = []
+
+                        for t_index in xrange(len(track_merge_gene_id_split)-1):
+                            track_merge_gene_id_list.append(track_merge_gene_id_split[t_index])
+
+                        track_merge_gene_id = ".".join(track_merge_gene_id_list)
+                    else:
+                        track_merge_gene_id = track_merge_gene_id_split[0]
+
+                    track_gene_source_dict[track_merge_gene_id] = 1
+                    # use this for keeping track of source genes for gene report
+                    #########################
+
                     merged_trans_obj = merged_obj.merged_trans_dict[merged_trans_id]
                     trans_id = merged_trans_obj.trans_id
                     scaffold = merged_trans_obj.scaffold
@@ -3351,8 +3414,12 @@ def process_trans_group(trans_line_list, total_gene_count):
                 bed_line = merged_obj.format_bed_line()
                 outfile_bed.write(bed_line)
                 outfile_bed.write("\n")
-                    
-            gene_report_line = format_gene_report_line(trans_obj_list,total_gene_count, trans_count) #######################################
+
+            track_gene_source_list = list(track_gene_source_dict.keys())
+            track_gene_source_list.sort()
+            track_gene_source = ",".join(track_gene_source_list)
+
+            gene_report_line = format_gene_report_line(trans_obj_list,total_gene_count, trans_count,track_gene_source) #######################################
             outfile_gene_report.write(gene_report_line)
             outfile_gene_report.write("\n")
                            
@@ -3396,6 +3463,41 @@ for file_line in filelist_file_contents:
     
     print("opening bed list")
     bed_file_contents = open(filename).read().rstrip("\n").split("\n")
+
+    ###################
+    #2020/05/31
+    # check for sorted bed file
+
+    check_scaffold = "none"
+    check_prev_start = 0
+
+    #for line in bed_file_contents:
+    #    line_split = line.split("\t")
+
+    #    scaffold = line_split[0]
+    #    trans_start = int(line_split[1])
+    #    trans_end = int(line_split[2])
+    #    id_line = line_split[3]
+
+    #    if check_scaffold ==  "none":
+    #        check_scaffold = scaffold
+
+    #    if trans_start < check_prev_start:
+    #        if check_scaffold == scaffold:
+    #            print("bed lines out of order")
+    #            print(id_line)
+    #            sys.exit()
+
+    #    check_prev_start = trans_start
+
+    #    if scaffold != check_scaffold:
+    #        check_scaffold = scaffold
+    #        check_prev_start = 0
+
+
+    # 2020/05/31
+    ###################
+
     
     for line in bed_file_contents:
         line_split = line.split("\t")

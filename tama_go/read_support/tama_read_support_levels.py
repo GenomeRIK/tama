@@ -129,6 +129,33 @@ for line in filelist_file_contents:
                 source_trans_list.append(trans_id)
 
             source_trans_read_dict[source_name][trans_id][read_id] = 1
+
+    elif file_type == "ref_anno":
+
+        for transread_line in transread_file_contents:
+            transread_line_split = transread_line.split("\t")
+
+            id_line = transread_line_split[3]
+
+            id_split = id_line.split(";")
+
+            gene_id = id_split[0]
+            trans_id = id_split[1]
+            read_id = id_split[1]
+
+
+            chrom = transread_line_split[0]
+            t_start = transread_line_split[1]
+            t_end = transread_line_split[2]
+            strand = transread_line_split[5]
+            num_exons = int(transread_line_split[9])
+
+            if trans_id not in source_trans_read_dict[source_name]:
+                source_trans_read_dict[source_name][trans_id] = {}
+                source_trans_list.append(trans_id)
+
+            source_trans_read_dict[source_name][trans_id][read_id] = 1
+
     elif file_type == "read_support":
         
         #"merge_gene_id","merge_trans_id","gene_read_count","trans_read_count","source_line","support_line"
