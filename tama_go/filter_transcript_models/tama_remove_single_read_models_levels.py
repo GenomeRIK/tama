@@ -23,6 +23,7 @@ ap.add_argument('-k', type=str, nargs=1, help='Default to keep all multi-exon mo
 
 ap.add_argument('-s', type=str, nargs=1, help='Requires models to have support from at least this number of sources. Default is 1')
 
+ap.add_argument('-n', type=str, nargs=1, help='Requires models to have support from at least this number of reads. Default is 2')
 
 opts = ap.parse_args()
 
@@ -68,6 +69,12 @@ if not opts.s:
     source_support_flag = 1
 else:
     source_support_flag = int(opts.s[0])
+
+if not opts.n:
+    print("Default only requires read support of 2")
+    read_support_threshold = 2
+else:
+    read_support_threshold = int(opts.n[0])
 
 bed_file = opts.b[0]
 
@@ -132,6 +139,8 @@ for line in read_file_contents:
         this_source_name = this_source_read_line.split(":")[0]
 
         merge_source_read_dict[merge_trans_id][this_source_name] = {}
+
+        this_source_read_line_split = this_source_name.split(":")
 
         if len(this_source_read_line_split) > 2:
 
@@ -290,12 +299,12 @@ for gene_id in gene_list:
 
             elif source_support_flag == 1:
 
-                if num_sources > 1:
+                if num_sources > 1 and total_trans_num_reads >= read_support_threshold:
                     output_flag = "keep"
 
                 else:
 
-                    if total_trans_num_reads > 1:
+                    if total_trans_num_reads >= read_support_threshold:
                         output_flag = "keep"
                     else:
 
