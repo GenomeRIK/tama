@@ -5,7 +5,7 @@ import time
 
 
 #
-# This script converts ensembl gtf to bed format 
+# This script converts NCBI gtf to bed format
 # It is designed to work with all current versions.
 # It includes CDS boundaries for the 7th and 8th columns of the bed file.
 #
@@ -30,8 +30,8 @@ class Gene:
                 self.gene_id = subfield.split("\"")[1]
         
         self.chrom = line_split[0]
-        self.g_start = int(line_split[3]) - 1 
-        self.g_end = int(line_split[4])
+        #self.g_start = int(line_split[3]) - 1
+        #self.g_end = int(line_split[4])
         self.strand = line_split[6]
         
 
@@ -54,7 +54,7 @@ class Transcript:
         
         
         self.chrom = line_split[0]
-        self.t_start = int(line_split[3]) - 1 
+        self.t_start = int(line_split[3]) - 1
         self.t_end = int(line_split[4])
         self.strand = line_split[6]
         
@@ -86,8 +86,16 @@ class Transcript:
         
         
         self.e_start_list.append(exon_obj.e_start)
+        self.e_start_list.sort()
         self.e_end_list.append(exon_obj.e_end)
+        self.e_end_list.sort()
         self.e_obj_list.append(exon_obj)
+
+        if self.t_start > exon_obj.e_start:
+            self.t_start = exon_obj.e_start
+
+        if self.t_end < exon_obj.e_end:
+            self.t_end = exon_obj.e_end
     
     def add_cds(self,cds_line):
         cds_obj = Cds(cds_line)
@@ -280,7 +288,7 @@ for line in gtf_file_contents:
     line_split = line.split("\t")
     region_type = line_split[2]
     
-    if region_type != "gene":
+    if region_type != "exon":
         continue
     
     anno_line = line_split[8]
@@ -289,6 +297,10 @@ for line in gtf_file_contents:
     for subfield in anno_split:
         if "gene_id" in subfield:
             gene_id = subfield.split("\"")[1]
+
+    # continue if we covered this gene already
+    if gene_id in gene_dict:
+        continue
 
     gene_dict[gene_id] = Gene(line)
 
