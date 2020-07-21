@@ -19,7 +19,7 @@ Author: Richard I. Kuo
 
 This script merges transcriptome/genome annotations.
 
-Last Updated: 2020/05/31
+Last Updated: 2020/07/21
 
 Added more informative error message for issues with strand information from input bed files. 
 
@@ -3401,8 +3401,13 @@ def process_trans_group(trans_line_list, total_gene_count):
                     ########
                     # get source id in case of source id flag
                     if source_id_flag != "no_source_id":
-                        this_source_name = merged_trans_id.split("_")[0]
-                        this_source_trans_id = merged_trans_id.split("_")[1]
+                        this_source_name_split = merged_trans_id.split("_")
+                        this_source_name = this_source_name_split[0]
+
+                        # this accounts for underscores used in the original trans id's
+                        this_source_name_split.pop(0)
+                        this_source_trans_id = "_".join(this_source_name_split)
+
 
                         if source_id_flag == this_source_name:
                             this_source_gene_id = source_trans_gene_dict[this_source_name][this_source_trans_id]##################################################
