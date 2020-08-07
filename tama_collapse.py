@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2019_11_19'
+tc_date = 'tc_version_date_2020_07_18'
 
 ### Notes on changes
 # Fixed issue with coordinates of soft clipped variants in the variant output file. 
@@ -50,13 +50,13 @@ ap.add_argument('-sjt', type=str, nargs=1, help='Threshold for detecting errors 
 ap.add_argument('-lde', type=str, nargs=1, help='Threshold for amount of local density error near splice junctions that is allowed (default is 1000 errors which practically means no threshold is applied)')
 ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this to pick the symbol used to represent matches in the simple error string for LDE output.')
 
-
 ap.add_argument('-b', type=str, nargs=1, help='Use BAM instead of SAM')
-
-
 ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
-
 ap.add_argument('-v', type=str, nargs=1, help='Prints out version date and exits.')
+
+ap.add_argument('-rm', type=str, nargs=1, help='Run mode allows you to use original or low_mem mode, default is original')
+ap.add_argument('-vc', type=str, nargs=1, help='Variation covwerage threshold: Default 5 reads')
+
 
 opts = ap.parse_args()
 
@@ -183,6 +183,24 @@ else:
         print("Please use log_on or log_off")
         sys.exit()
 
+if not opts.rm:
+    print("Default run mode original")
+    run_mode_flag = "original"
+else:
+    run_mode_flag = str(opts.rm[0])
+    if run_mode_flag != "original" and run_mode_flag != "low_mem" :
+        print("Please use original or low_mem for -rm setting")
+        sys.exit()
+
+if not opts.vc:
+    print("Default 5 read threshold")
+    var_support_threshold = 5
+else:
+    var_support_threshold = int(opts.vc[0])
+
+
+
+
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
 
@@ -259,17 +277,18 @@ outfile_trans_clust_report = open(trans_clust_outfile_name,"w")
 #outfile_trans_clust_report.write(trans_clust_line)
 #outfile_trans_clust_report.write("\n")
 
-variant_outfile_name = outfile_prefix + "_variants.txt"
-outfile_variant = open(variant_outfile_name,"w")
-variant_file_line = "\t".join(["scaffold","position","type","alt_allele","count","cov_count","cluster_list"])
-outfile_variant.write(variant_file_line)
-outfile_variant.write("\n")
+if run_mode_flag == "original":
+    variant_outfile_name = outfile_prefix + "_variants.txt"
+    outfile_variant = open(variant_outfile_name,"w")
+    variant_file_line = "\t".join(["scaffold","position","type","alt_allele","count","cov_count","cluster_list"])
+    outfile_variant.write(variant_file_line)
+    outfile_variant.write("\n")
 
-varcov_outfile_name = outfile_prefix + "_varcov.txt"
-outfile_varcov = open(varcov_outfile_name,"w")
-varcov_file_line = "\t".join(["positions","overlap_clusters"])
-outfile_varcov.write(varcov_file_line)
-outfile_varcov.write("\n")
+    varcov_outfile_name = outfile_prefix + "_varcov.txt"
+    outfile_varcov = open(varcov_outfile_name,"w")
+    varcov_file_line = "\t".join(["positions","overlap_clusters"])
+    outfile_varcov.write(varcov_file_line)
+    outfile_varcov.write("\n")
 
 polya_outfile_name = outfile_prefix + "_polya.txt"
 outfile_polya = open(polya_outfile_name,"w")
@@ -300,6 +319,10 @@ outfile_lde.write("\n")
 variation_dict = {} # variation_dict[scaffold][position][variant type][alt allele][cluster id] = 1
 var_coverage_dict = {} # var_coverage_dict[scaffold][position][trans_id] = 1
 
+## sj hash 2020/07/27
+
+sj_hash_read_threshold = 20
+
 check_trans_id = '11_c110717/1/696' #########################################################################debugging
 
 def track_time(start_time,prev_time):
@@ -329,9 +352,13 @@ def track_time(start_time,prev_time):
 
 #convert cigar into list of digits and list of characters
 def cigar_list(cigar):
+    # fix issue with X and = used in SAM format from mininmap2
+    cigar = re.sub('=', 'M', cigar)
+    cigar = re.sub('X', 'M', cigar)
+
     cig_char = re.sub('\d', ' ', cigar)
     cig_char_list = cig_char.split()
-    
+
     cig_digit = re.sub("[a-zA-Z]+", ' ', cigar)
     cig_dig_list = cig_digit.split()
     
@@ -373,9 +400,9 @@ def trans_coordinates(start_pos,cigar):
     end_pos = int(start_pos)
     exon_start_list = []
     exon_end_list = []
-    
+
     exon_start_list.append(int(start_pos))
-    
+
     for i in xrange(len(cig_dig_list)):
         cig_flag = cig_char_list[i]
         
@@ -960,6 +987,521 @@ def calc_error_rate(start_pos,cigar,seq_list,scaffold,read_id):
     
     return h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list
 
+
+####################################################################################################
+
+#get variation information without calc_error_rate
+
+#used to calculate error rate of mapping
+def calc_variation(start_pos,cigar,seq_list,scaffold,read_id):
+    [cig_dig_list,cig_char_list] = cigar_list(cigar)
+
+    h_count = 0
+    s_count = 0
+    i_count = 0
+    d_count = 0
+    mis_count = 0
+
+
+
+    #walk through both the query seq and the mapped seq
+    genome_pos = start_pos - 1 #adjust for 1 base to 0 base coordinates
+    seq_pos = 0
+
+    for i in xrange(len(cig_dig_list)):
+        cig_flag = cig_char_list[i]
+
+        #print(seq_pos)
+
+        if cig_flag == "H":
+            h_count = h_count + int(cig_dig_list[i])
+
+            ### for variation detection start
+            var_pos = genome_pos - h_count
+            var_seq = "N" * h_count
+            var_type = cig_flag
+            update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
+            ### for variation detection end
+
+            continue
+        elif cig_flag == "S":
+            s_count = s_count + int(cig_dig_list[i])
+
+            ### for variation detection start
+            seq_start = seq_pos
+            seq_end = seq_pos + int(cig_dig_list[i])
+            var_pos = genome_pos - s_count
+            var_seq = seq_list[seq_start:seq_end]
+            var_type = cig_flag
+
+            ###### change made 2019/11/19
+            #correct for soft clips at end of mapping
+            num_cig_entities = len(cig_dig_list)
+            if i == num_cig_entities - 1:
+                var_pos = genome_pos + 1 - s_count
+            ###### change made 2019/11/19
+
+            update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
+            ### for variation detection end
+
+            #adjust seq position to account for missing soft mask in genome coord
+            seq_pos = seq_pos + int(cig_dig_list[i])
+
+            continue
+        elif cig_flag == "M":
+            match_length = int(cig_dig_list[i])
+            seq_start = seq_pos
+            seq_end = seq_pos + match_length
+
+            genome_start = genome_pos
+            genome_end = genome_pos + match_length
+
+            #seq_slice = seq_list[seq_start:seq_end+1]
+            #genome_slice = fasta_dict[scaffold][genome_start:genome_end+1]
+
+            seq_slice = seq_list[seq_start:seq_end]
+            genome_slice = fasta_dict[scaffold][genome_start:genome_end]
+
+            seq_diff = seq_end - seq_start
+            gen_diff = genome_end - genome_start
+
+            ######################################################
+            #print(str(match_length)+cig_flag)
+            ######################################################
+
+            #get number and location of mis matches
+            genome_mismatch_list,seq_mismatch_list,nuc_mismatch_list = mismatch_seq(genome_slice,seq_slice,genome_start,seq_start)
+
+
+            ### for variation detection start
+            for mismatch_index in xrange(len(seq_mismatch_list)):
+                var_pos = genome_mismatch_list[mismatch_index]
+                seq_var_pos = seq_mismatch_list[mismatch_index]
+                var_seq = seq_list[seq_var_pos]
+                var_type = cig_flag
+                update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
+            ### for variation detection end
+
+            seq_pos = seq_pos + match_length
+            genome_pos = genome_pos + match_length
+
+            continue
+        elif cig_flag == "I":
+
+            ### for variation detection start
+            seq_start = seq_pos
+            seq_end = seq_pos + int(cig_dig_list[i])
+            var_pos = genome_pos
+            var_seq = seq_list[seq_start:seq_end]
+            var_type = cig_flag
+            update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
+            ### for variation detection end
+
+            insertion_length = int(cig_dig_list[i])
+            seq_pos = seq_pos + insertion_length
+
+
+
+            continue
+        elif cig_flag == "D":
+
+            deletion_length = int(cig_dig_list[i])
+
+            ### for variation detection start
+            var_pos = genome_pos
+            var_seq = str(deletion_length) #var seq for deletion is length of deletion
+            var_type = cig_flag
+            update_variation_dict(scaffold,var_pos,var_type,var_seq,read_id)
+            ### for variation detection end
+
+            genome_pos = genome_pos + deletion_length
+            d_count = d_count + deletion_length
+
+            continue
+        elif cig_flag == "N":
+
+
+            #####################################################################################################################
+
+            #########################################
+            # not related to sj error should probably move this up or down code of this block
+            #########################################
+            intron_length = int(cig_dig_list[i])
+            genome_pos = genome_pos + intron_length
+            #########################################
+
+            #############################################################################################################################
+
+            continue
+
+        else:
+            match_length = int(cig_dig_list[i])
+
+            print("Error with cigar flag")
+            print(str(match_length) + cig_flag)
+            print(cig_dig_list)
+            print(cig_char_list)
+            sys.exit()
+
+
+
+
+#####################################################################################################
+
+## New calc error for low mem mode
+#used to calculate error rate of mapping
+def calc_error_rate_lowmem(start_pos,cigar,seq_list,scaffold,read_id):
+    [cig_dig_list,cig_char_list] = cigar_list(cigar)
+
+    h_count = 0
+    s_count = 0
+    i_count = 0
+    d_count = 0
+    mis_count = 0
+
+    all_genome_mismatch_list = []
+    all_nuc_mismatch_list = [] # this shows the nuc mismatch for the all_genome_mismatch_list
+
+    insertion_list = []
+    insertion_length_list = []
+    deletion_list = []
+    deletion_length_list = []
+
+    sj_pre_error_list = []
+    sj_post_error_list = []
+
+
+    nomatch_dict = {} # nomatch_dict[non match id] = list
+    nomatch_dict['mismatch_list'] = all_genome_mismatch_list
+    nomatch_dict['insertion_list'] = insertion_list
+    nomatch_dict['insertion_length_list'] = insertion_length_list
+    nomatch_dict['deletion_list'] = deletion_list
+    nomatch_dict['deletion_length_list'] = deletion_length_list
+
+    #walk through both the query seq and the mapped seq
+    genome_pos = start_pos - 1 #adjust for 1 base to 0 base coordinates
+    seq_pos = 0
+
+    for i in xrange(len(cig_dig_list)):
+        cig_flag = cig_char_list[i]
+
+        #print(seq_pos)
+
+        if cig_flag == "H":
+            h_count = h_count + int(cig_dig_list[i])
+
+            continue
+        elif cig_flag == "S":
+            s_count = s_count + int(cig_dig_list[i])
+
+            #adjust seq position to account for missing soft mask in genome coord
+            seq_pos = seq_pos + int(cig_dig_list[i])
+
+            continue
+        elif cig_flag == "M":
+            match_length = int(cig_dig_list[i])
+            seq_start = seq_pos
+            seq_end = seq_pos + match_length
+
+            genome_start = genome_pos
+            genome_end = genome_pos + match_length
+
+            seq_slice = seq_list[seq_start:seq_end]
+            genome_slice = fasta_dict[scaffold][genome_start:genome_end]
+
+            seq_diff = seq_end - seq_start
+            gen_diff = genome_end - genome_start
+
+
+            #get number and location of mis matches
+            genome_mismatch_list,seq_mismatch_list,nuc_mismatch_list = mismatch_seq(genome_slice,seq_slice,genome_start,seq_start)
+
+            mis_count = mis_count + len(genome_mismatch_list)
+            all_genome_mismatch_list.extend(genome_mismatch_list)
+            all_nuc_mismatch_list.extend(nuc_mismatch_list)
+
+            seq_pos = seq_pos + match_length
+            genome_pos = genome_pos + match_length
+
+            continue
+        elif cig_flag == "I":
+
+            insertion_length = int(cig_dig_list[i])
+            seq_pos = seq_pos + insertion_length
+            i_count = i_count + insertion_length
+
+            insertion_list.append(genome_pos)
+            insertion_length_list.append(insertion_length)
+
+            continue
+        elif cig_flag == "D":
+
+            deletion_list.append(genome_pos)
+            deletion_length = int(cig_dig_list[i])
+            deletion_length_list.append(deletion_length)
+
+            genome_pos = genome_pos + deletion_length
+            d_count = d_count + deletion_length
+
+            continue
+        elif cig_flag == "N":
+
+            sj_pre_error_builder_list = [] # list of cigar string before splice junctions
+            sj_post_error_builder_list = [] # list of cigar string after splice junctions
+
+
+            # check for errors before splice junction pre
+            #########################################
+            prev_cig_flag = cig_char_list[i - 1]
+            prev_cig_length = int(cig_dig_list[i - 1])
+
+            #############################################################################################################################
+            # Add sj error info
+
+            prev_total_mismatch_length = 0
+            this_mismatch_length = 0 # keep track of where in  the error list of cig
+
+            all_genome_mismatch_index = len(all_genome_mismatch_list) - 1
+
+            prev_total_cig_length = prev_cig_length
+            prev_cig_index = i - 1
+
+            this_cig_genome_pos = genome_pos
+
+            prev_sj_flag = 0
+
+            while prev_total_mismatch_length <= sj_err_threshold and prev_sj_flag == 0:
+                this_mismatch_length = this_mismatch_length + prev_cig_length
+                prev_total_mismatch_length = this_mismatch_length
+
+                if prev_cig_flag == "M":
+                    # if no mismatch
+                    if len(all_genome_mismatch_list) < 1: # no mismatch from M cigar regions up to this point
+                        #last_genome_mismatch = -2 * sj_err_threshold
+
+                        if prev_total_mismatch_length <= sj_err_threshold: # no mis matches for this gene
+                            sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                    elif all_genome_mismatch_index >= 0:
+                        last_genome_mismatch = all_genome_mismatch_list[all_genome_mismatch_index]
+                        last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
+
+                        dist_prev_mismatch = genome_pos - last_genome_mismatch
+
+                        m_builder_add_count = 0
+
+                        #while dist_prev_mismatch <= this_mismatch_length and dist_prev_mismatch <= sj_err_threshold:
+                        while last_genome_mismatch >= this_cig_genome_pos - prev_cig_length and last_genome_mismatch <= this_cig_genome_pos and dist_prev_mismatch <= sj_err_threshold: # dist_prev_mismatch is still in range of sj threshold
+
+                            sj_pre_error_builder_list.append(str(dist_prev_mismatch) + "." + last_nuc_mismatch)
+
+                            m_builder_add_count += 1
+
+                            all_genome_mismatch_index -= 1
+
+                            last_genome_mismatch = all_genome_mismatch_list[all_genome_mismatch_index]
+                            last_nuc_mismatch = all_nuc_mismatch_list[all_genome_mismatch_index]
+                            dist_prev_mismatch = genome_pos - last_genome_mismatch
+
+
+
+                            if all_genome_mismatch_index < 0:
+                                break
+
+                        if m_builder_add_count == 0:
+                            if prev_total_mismatch_length <= sj_err_threshold: #  still within in sj threshold so output
+                                sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                    elif all_genome_mismatch_index < 0: #  length of mismatch list is not 0 but index has gone past that
+                        #last_genome_mismatch = -2 * sj_err_threshold
+                        if prev_total_mismatch_length <= sj_err_threshold: #  still within in sj threshold so output
+                            sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+                    else:
+                        print("Error with all_genome_mismatch_index")
+                        print(all_genome_mismatch_list)
+                        print(all_genome_mismatch_index)
+                        sys.exit()
+                elif prev_cig_flag != "N":
+
+                    prev_cig_flag = cig_char_list[prev_cig_index]
+                    prev_cig_length = int(cig_dig_list[prev_cig_index])
+
+                    sj_pre_error_builder_list.append(str(prev_cig_length) + prev_cig_flag)
+
+                elif prev_cig_flag == "N":
+                    prev_sj_flag = 1
+
+                prev_cig_index -= 1
+
+                if prev_cig_index < 0 :
+                    break
+
+                this_cig_genome_pos = this_cig_genome_pos - prev_cig_length
+
+                prev_cig_flag = cig_char_list[prev_cig_index]
+                prev_cig_length = int(cig_dig_list[prev_cig_index])
+
+            if len(sj_pre_error_builder_list) == 0: # in case no errors are found
+                sj_pre_error_builder_list.append(no_mismatch_flag)
+
+            # end of adding sj error info prev
+            #############################################################################################################################
+
+            #########################################
+            # not related to sj error should probably move this up or down code of this block
+            #########################################
+            intron_length = int(cig_dig_list[i])
+            genome_pos = genome_pos + intron_length
+            #########################################
+
+            #check for errors after splice junction post
+            #########################################
+            next_cig_flag = cig_char_list[i + 1]
+            next_cig_length = int(cig_dig_list[i + 1])
+
+            #############################################################################################################################
+
+            next_total_mismatch_length = 0
+            this_mismatch_length = 0 # keep track of where in  the error list of cig
+
+            all_genome_mismatch_index = len(all_genome_mismatch_list) - 1
+
+            next_total_cig_length = next_cig_length
+            next_cig_index = i + 1
+
+            this_next_seq_pos = seq_pos
+            this_genome_pos = genome_pos
+
+            #genome_mismatch_index = 0
+            next_sj_flag = 0
+
+            while next_total_mismatch_length <= sj_err_threshold and next_sj_flag == 0:
+                this_mismatch_length = this_mismatch_length + next_cig_length
+                next_total_mismatch_length = this_mismatch_length
+
+                if next_cig_flag == "M":
+                    match_length = next_cig_length
+                    seq_start = this_next_seq_pos
+                    seq_end = this_next_seq_pos + match_length
+
+                    genome_start = this_genome_pos
+                    genome_end = this_genome_pos + match_length
+
+                    seq_slice = seq_list[seq_start:seq_end]
+                    genome_slice = fasta_dict[scaffold][genome_start:genome_end]
+
+                    #######################################################
+                    #print(str(match_length)+next_cig_flag)
+                    #print(seq_start)
+                    #print(seq_end)
+                    ######################################################
+
+                    genome_mismatch_list, seq_mismatch_list, nuc_mismatch_list = mismatch_seq(genome_slice, seq_slice, genome_start, seq_start)
+
+                    genome_mismatch_index = 0
+
+                    # if no mismatch
+                    if len(genome_mismatch_list) < 1: # no mismatch in this cig entry
+                        #dist_next_mismatch = 2 * sj_err_threshold
+
+                        if next_total_mismatch_length <= sj_err_threshold:
+
+                            sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+
+                    elif genome_mismatch_index <= len(genome_mismatch_list):
+                        nuc_next_mismatch = nuc_mismatch_list[0]
+                        #dist_next_mismatch = genome_mismatch_list[0] - this_genome_pos
+                        dist_next_mismatch = genome_mismatch_list[0] - genome_pos
+
+                        m_builder_add_count = 0
+
+                        while dist_next_mismatch <= this_mismatch_length and dist_next_mismatch < sj_err_threshold:
+                            next_genome_mismatch = genome_mismatch_list[genome_mismatch_index]
+                            next_nuc_mismatch = nuc_mismatch_list[genome_mismatch_index]
+
+                            #dist_next_mismatch = next_genome_mismatch - this_genome_pos
+                            dist_next_mismatch = next_genome_mismatch - genome_pos
+
+                            if dist_next_mismatch <= sj_err_threshold: # this mismatch goes beyond this M length
+
+                                sj_post_error_builder_list.append(str(dist_next_mismatch) + "." + next_nuc_mismatch)
+
+                                m_builder_add_count += 1
+
+
+                            genome_mismatch_index += 1
+                            if genome_mismatch_index >= len(genome_mismatch_list):
+                                break
+
+                        if m_builder_add_count == 0:
+                            if next_total_mismatch_length <= sj_err_threshold:
+                                sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+
+
+                    else:
+                        print("Error with genome_mismatch_index")
+                        sys.exit()
+                elif next_cig_flag != "N":
+
+                    next_cig_flag = cig_char_list[next_cig_index]
+                    next_cig_length = int(cig_dig_list[next_cig_index])
+
+                    sj_post_error_builder_list.append(str(next_cig_length) + next_cig_flag)
+                elif next_cig_flag == "N":
+                    next_sj_flag = 1
+
+
+
+                if next_cig_flag != "D": # increase this seq pos only if not a deletion
+                    this_next_seq_pos = this_next_seq_pos + next_cig_length
+
+                if next_cig_flag != "I":
+                        this_genome_pos = this_genome_pos + next_cig_length
+
+                next_cig_index += 1
+
+                if next_cig_index >= len(cig_char_list):
+                    break
+
+                next_cig_flag = cig_char_list[next_cig_index]
+                next_cig_length = int(cig_dig_list[next_cig_index])
+
+
+
+            if len(sj_post_error_builder_list) == 0: # in case no errors are found
+                sj_post_error_builder_list.append(no_mismatch_flag)
+
+            # end of adding sj error info post
+            #############################################################################################################################
+            #############################################################################################################################
+
+
+            sj_post_error_builder_line = "_".join(sj_post_error_builder_list)
+
+            sj_pre_error_builder_list_reverse = list(reversed(sj_pre_error_builder_list))
+            sj_pre_error_builder_line = "_".join(sj_pre_error_builder_list_reverse)
+
+            sj_pre_error_list.append(sj_pre_error_builder_line)
+            sj_post_error_list.append(sj_post_error_builder_line)
+
+
+            #########################################
+
+
+
+            continue
+
+        else:
+            match_length = int(cig_dig_list[i])
+
+            print("Error with cigar flag")
+            print(str(match_length) + cig_flag)
+            print(cig_dig_list)
+            print(cig_char_list)
+            sys.exit()
+
+    return h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list
+
 ####################################################################################################
 
 class Transcript:
@@ -999,6 +1541,8 @@ class Transcript:
         
         self.percent_cov = 0.0
         self.percent_identity = 0.0
+
+        self.sj_hash = "none"  # use this to speed up matching
         
     
     def add_sam_info(self,sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list):
@@ -1029,6 +1573,41 @@ class Transcript:
         self.end_pos = end_pos
         
         self.num_exons = len(exon_start_list)
+
+
+    def make_sj_hash_string(self):
+        ################### 2020/07/26
+        # make sj hash
+        exon_start_string_list = []
+        exon_end_string_list = []
+
+        for exon_index in xrange(len(self.exon_start_list)):
+            exon_start_string_list.append(str(self.exon_start_list[exon_index]))
+            exon_end_string_list.append(str(self.exon_end_list[exon_index]))
+
+        sj_right_list = exon_start_string_list
+        sj_right_list.pop(0)
+
+        sj_left_list = exon_end_string_list
+        sj_left_list.pop(-1)
+
+        sj_left_line = ",".join(sj_left_list)
+        sj_right_line = ",".join(sj_right_list)
+        self.sj_hash = ";".join([sj_left_line,sj_right_line])
+        ###################
+
+    def make_sj_hash_int(self):
+        ################### 2020/07/26
+        # make sj hash
+        self.sj_hash = 0
+
+
+        for exon_index in xrange(len(self.exon_start_list)-1):
+            self.sj_hash = self.sj_hash + (self.exon_start_list[exon_index+1] * self.exon_end_list[exon_index])
+
+
+        ###################
+
     
     def add_mismatch(self,h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list):
         self.h_count = int(h_count)
@@ -1440,6 +2019,80 @@ def fuzzy_match(coord1,coord2,diff_threshold): # use this to allow for fuzzy mat
     
     return match_flag,diff_num
     
+####################################################################################################
+
+## added 2020/07/26
+# use this for speeding up transcript matching
+def exact_match_capped(trans_obj,o_trans_obj,strand):
+
+    exact_match_flag = "not_exact"
+
+    a_trans_start = trans_obj.start_pos
+    a_trans_end = trans_obj.end_pos
+
+    b_trans_start = o_trans_obj.start_pos
+    b_trans_end = o_trans_obj.end_pos
+
+    this_start_diff = abs(a_trans_start - b_trans_start)
+    this_end_diff = abs(a_trans_end - b_trans_end)
+
+    if strand == "+":
+        if this_start_diff <= fiveprime_threshold and this_end_diff <= threeprime_threshold:
+
+            sj_hash_a = trans_obj.sj_hash
+            sj_hash_b = o_trans_obj.sj_hash
+
+            if sj_hash_a == sj_hash_b:
+                exact_match_flag = "exact_match"
+    elif strand == "-":
+        if this_start_diff <= threeprime_threshold and this_end_diff <= fiveprime_threshold:
+
+            sj_hash_a = trans_obj.sj_hash
+            sj_hash_b = o_trans_obj.sj_hash
+
+            if sj_hash_a == sj_hash_b:
+                exact_match_flag = "exact_match"
+
+
+    return exact_match_flag
+
+####################################################################################################
+
+## added 2020/07/26
+# use this for speeding up transacript matching , NO CAP
+def exact_match_nocap(trans_obj,o_trans_obj,strand):
+
+    exact_match_flag = "not_exact"
+
+    if strand == "+":
+        a_trans_end = trans_obj.end_pos
+        b_trans_end = o_trans_obj.end_pos
+        this_end_diff = abs(a_trans_end - b_trans_end)
+
+
+        if this_end_diff <= threeprime_threshold:
+            sj_hash_a = trans_obj.sj_hash
+            sj_hash_b = o_trans_obj.sj_hash
+
+            if sj_hash_a == sj_hash_b:
+                exact_match_flag = "exact_match"
+
+    elif strand == "-":
+        a_trans_start = trans_obj.start_pos
+        b_trans_start = o_trans_obj.start_pos
+        this_start_diff = abs(a_trans_start - b_trans_start)
+
+        if this_start_diff <= threeprime_threshold:
+
+            sj_hash_a = trans_obj.sj_hash
+            sj_hash_b = o_trans_obj.sj_hash
+
+            if sj_hash_a == sj_hash_b:
+                exact_match_flag = "exact_match"
+
+    return exact_match_flag
+
+
 ####################################################################################################
 
 def compare_transcripts(trans_obj,o_trans_obj,fiveprime_cap_flag,strand): #use this to compare two transcripts
@@ -3624,13 +4277,22 @@ def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through tran
     # grouped clusters that have been not been searched/been used as a hunter
     unsearched_trans_obj_dict = {}  # unsearched_trans_obj_dict[cluster_id] =  trans_obj
 
+    #############
+    # create SJ Hash for transcript models if there are many reads 2020/07/27
+    num_group_reads = len(trans_obj_list)
+    #if num_group_reads > sj_hash_read_threshold - 1:
+    #    for trans_obj in trans_obj_list:
+    #        #trans_obj.make_sj_hash_int()
+    #        trans_obj.make_sj_hash_string()
+    #############
+
     for trans_obj in trans_obj_list:
         ungrouped_trans_obj_dict[trans_obj.cluster_id] = trans_obj
 
 
     ###########################
     
-    all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
+    #all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
 
     ungrouped_count = len(trans_obj_list)
     unsearched_count = 0
@@ -3660,7 +4322,7 @@ def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through tran
 
                 unsearched_trans_obj_dict.pop(hunter_cluster_id)
 
-            all_trans_id_dict[hunter_cluster_id] = i
+            #all_trans_id_dict[hunter_cluster_id] = i
             hunter_strand = hunter_trans_obj.strand
             hunter_num_exons = hunter_trans_obj.num_exons
 
@@ -3695,18 +4357,45 @@ def simplify_gene_capped(trans_obj_list,fiveprime_cap_flag): # goes through tran
                 if group_match_flag == 1:  # if they are both in the same group
                     continue
 
+
                 trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
 
-                trans_match_flag = 0
-                # same_transcript means clusters should be grouped for collapsing!
-                if trans_comp_flag == "same_transcript":
-                    trans_match_flag = 1
+                ######added to speed things up
 
-                a_group_check = transgroup.check_trans_status(hunter_cluster_id)
-                b_group_check = transgroup.check_trans_status(prey_cluster_id)
+
+                #if num_group_reads < sj_hash_read_threshold or hunter_num_exons < 3:
+                #    trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+                #
+                #else:
+                #
+                #    exact_match_flag = exact_match_capped(hunter_trans_obj, prey_trans_obj,hunter_strand)
+                #
+                #    if exact_match_flag == "exact_match":
+                #        trans_comp_flag = "same_transcript"
+                #
+                #    elif hunter_num_exons == 1: # exact match is the same as compare for single exon transcripts
+                #        trans_comp_flag = 'diff_transcripts'
+                #
+                #    elif exact_match_flag == "not_exact":
+                #        trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+                #
+                #    else:
+                #        print("Error with exact match output")
+                #        sys.exit()
+
+
+
+                # old system used to generalize for nocap mode but this slows down capped mode
+                #trans_match_flag = 0
+                # same_transcript means clusters should be grouped for collapsing!
+                #if trans_comp_flag == "same_transcript":
+                #    trans_match_flag = 1
+
+                #a_group_check = transgroup.check_trans_status(hunter_cluster_id)
+                #b_group_check = transgroup.check_trans_status(prey_cluster_id)
 
                 ##########################################Affects all downstream code!
-                if trans_match_flag != 1:  # skip if there is no match
+                if trans_comp_flag != "same_transcript":  # skip if there is no match
                     continue
 
                 else:  # if they are in different groups, merge groups, applies to both caps
@@ -3749,7 +4438,15 @@ def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through trans
         print("invoking simplify_gene_nocap")
     
     transgroup = TransGroup("transgroup")
-    
+
+    #############
+    # create SJ Hash for transcript models if there are many reads 2020/07/27
+    num_group_reads = len(trans_obj_list)
+    #if num_group_reads > sj_hash_read_threshold - 1:
+    #    for trans_obj in trans_obj_list:
+    #        #trans_obj.make_sj_hash_int()
+    #        trans_obj.make_sj_hash_string()
+    #############
 
     #new cluster grouping algorithm
     ############################################################################################################
@@ -3784,13 +4481,15 @@ def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through trans
 
     ###########################
 
-    all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
+    #all_trans_id_dict = {} # all_trans_id_dict[trans id] = 1
 
     ungrouped_count = len(trans_obj_list)
     unsearched_count = 0
     
     exon_num_list = list(exon_trans_obj_dict.keys())
     exon_num_list.sort(reverse=True)
+
+    max_num_exons = exon_num_list[0]
     
     #exon_num_level = exon_num_list[0]
     exon_num_index = 0
@@ -3880,7 +4579,7 @@ def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through trans
                 # print("hunter: " + hunter_cluster_id )
                 #print(exon_num_list)
     
-                all_trans_id_dict[hunter_cluster_id] = i
+                #all_trans_id_dict[hunter_cluster_id] = i
                 hunter_strand = hunter_trans_obj.strand
                 hunter_num_exons = hunter_trans_obj.num_exons
     
@@ -3921,9 +4620,27 @@ def simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag): # goes through trans
                         # this shoudn't be needed anymore due to new dict based group search
                         if group_match_flag == 1:  # if they are both in the same group
                             continue
-        
+
                         trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
-                        
+
+                        # this is for same number of exon matches
+                        #if num_group_reads < sj_hash_read_threshold or hunter_num_exons < 3:
+                        #    trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+                        #else:
+                        #    exact_match_flag = exact_match_nocap(hunter_trans_obj, prey_trans_obj,hunter_strand)
+                        #
+                        #    if exact_match_flag == "exact_match":
+                        #        trans_comp_flag = "same_three_prime_same_exons"  # Use this for long-long nocap comparison
+                        #    elif hunter_num_exons == 1:
+                        #        trans_comp_flag = 'diff_transcripts'
+                        #    elif exact_match_flag == "not_exact":
+                        #        trans_comp_flag, start_match_list, start_diff_list, end_match_list, end_diff_list, short_trans, long_trans, min_exon_num, diff_num_exon_flag = compare_transcripts(hunter_trans_obj, prey_trans_obj, fiveprime_cap_flag, hunter_strand)
+                        #
+                        #    else:
+                        #        print("Error with exact match output")
+                        #        sys.exit()
+
+
                         # print("compare_transcripts: "+hunter_trans_obj.cluster_id +"\t"+prey_trans_obj.cluster_id+"\t" +trans_comp_flag + "\t" + str(hunter_trans_obj.num_exons)+ "\t" + str(prey_trans_obj.num_exons) + "\t" + str(diff_num_exon_flag))
 
                         #For nocap only!!!!
@@ -4371,230 +5088,215 @@ elif bam_flag == "SAM":
 
 ##########################
 
-for line in sam_file_contents:
 
-    #if sam_count == 0:
-    #    print(line)
+############################################################################################################
+############################################################################################################
+############################################################################################################
+# original mode start ##############################################
 
-    line_split = line.split("\t")
+if run_mode_flag == "original":
+    for line in sam_file_contents:
 
-#    if line_split[0] == "@SQ":
-#        seq_name = line_split[1].split(":")[1]
-#        seq_length = line_split[2].split(":")[1]
-#
-#        sam_scaffold_dict[seq_name] = seq_length
-#        sam_scaffold_list.append(seq_name)
-#
-    if line.startswith("@"):
-        continue
+        #if sam_count == 0:
+        #    print(line)
 
-    if line == "":
-        continue
+        line_split = line.split("\t")
 
-    sam_count += 1
-    if sam_count % 5000 == 0:
-        print("sam count " + str(sam_count))
-
-    read_id = line_split[0]
-    sam_flag = int(line_split[1])
-    scaff_name = line_split[2]
-    start_pos = int(line_split[3])
-
-    cigar = line_split[5]
-    read_seq = line_split[9]
-    seq_list = list(read_seq)
-    mapped_flag = sam_flag_dict[sam_flag]
-
-    ####################################
-    #Check sam and gmap strand info!!!
-    #get strand information from gmap flag
-
-    xs_flag = "na"
-    for field in line_split:
-        if "XS:A:" in field:
-            xs_flag = field.split(":")[-1]
-
-    if mapped_flag == "forward_strand"  and xs_flag == "-":
-        outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"+-"])
-        outfile_strand.write(outline_strand)
-        outfile_strand.write("\n")
-    elif mapped_flag == "reverse_strand" and xs_flag == "+":
-        outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"-+"])
-        outfile_strand.write(outline_strand)
-        outfile_strand.write("\n")
-
+    #    if line_split[0] == "@SQ":
+    #        seq_name = line_split[1].split(":")[1]
+    #        seq_length = line_split[2].split(":")[1]
     #
-    # Above: Check sam and gmap strand info!!!
-    ####################################
+    #        sam_scaffold_dict[seq_name] = seq_length
+    #        sam_scaffold_list.append(seq_name)
+    #
+        if line.startswith("@"):
+            continue
 
-    if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
-        unmapped_dict[read_id] = 1
-        accept_flag = mapped_flag # added this 2019/03/04
-        percent_coverage = "NA"
-        percent_identity = "NA"
-        error_line = "NA"
-        quality_percent = "NA"
-        length = "NA"
-        strand = "NA"
-        cigar = "NA"
+        if line == "":
+            continue
 
-        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
-        outfile_cluster.write(cluster_line)
-        outfile_cluster.write("\n")
-        continue
+        sam_count += 1
+        if sam_count % 5000 == 0:
+            print("sam count " + str(sam_count))
+
+        read_id = line_split[0]
+        sam_flag = int(line_split[1])
+        scaff_name = line_split[2]
+        start_pos = int(line_split[3])
+
+        cigar = line_split[5]
+        read_seq = line_split[9]
+        seq_list = list(read_seq)
+        mapped_flag = sam_flag_dict[sam_flag]
+
+        ####################################
+        #Check sam and gmap strand info!!!
+        #get strand information from gmap flag
+
+        xs_flag = "na"
+        for field in line_split:
+            if "XS:A:" in field:
+                xs_flag = field.split(":")[-1]
+
+        if mapped_flag == "forward_strand"  and xs_flag == "-":
+            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"+-"])
+            outfile_strand.write(outline_strand)
+            outfile_strand.write("\n")
+        elif mapped_flag == "reverse_strand" and xs_flag == "+":
+            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"-+"])
+            outfile_strand.write(outline_strand)
+            outfile_strand.write("\n")
+
+        #
+        # Above: Check sam and gmap strand info!!!
+        ####################################
+
+        if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
+            unmapped_dict[read_id] = 1
+            accept_flag = mapped_flag # added this 2019/03/04
+            percent_coverage = "NA"
+            percent_identity = "NA"
+            error_line = "NA"
+            quality_percent = "NA"
+            length = "NA"
+            strand = "NA"
+            cigar = "NA"
+
+            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
+            outfile_cluster.write(cluster_line)
+            outfile_cluster.write("\n")
+            continue
 
 
-    map_seq_length = mapped_seq_length(cigar)
+        map_seq_length = mapped_seq_length(cigar)
 
-    [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
+        [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
 
-    [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
+        [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate(start_pos,cigar,seq_list,scaff_name,read_id)
 
-    trans_obj = Transcript(read_id)
-    trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
-    trans_obj.add_map_seq_length(map_seq_length)
-    trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
-    trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
+        trans_obj = Transcript(read_id)
+        trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
+        trans_obj.add_map_seq_length(map_seq_length)
+        trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
+        trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
 
-    percent_coverage = trans_obj.calc_coverage()
-    percent_identity = trans_obj.calc_identity()
+        ##### 2020/07/27 sj hash
+        #trans_obj.make_sj_hash_string()
+        ##### 2020/07/27 sj hash
 
-    percent_coverage_str = str(round(percent_coverage,2))
-    percent_identity_str = str(round(percent_identity,2))
 
-    error_line = trans_obj.make_error_line()
-    seq_length = trans_obj.seq_length
-    strand = trans_obj.strand
+        percent_coverage = trans_obj.calc_coverage()
+        percent_identity = trans_obj.calc_identity()
 
-    multimap_flag = 0
+        percent_coverage_str = str(round(percent_coverage,2))
+        percent_identity_str = str(round(percent_identity,2))
 
-    if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
-        accept_flag = "discarded"
-        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
-        outfile_cluster.write(cluster_line)
-        outfile_cluster.write("\n")
-        #skip the transcript because the mapping is poor
-        continue
+        error_line = trans_obj.make_error_line()
+        seq_length = trans_obj.seq_length
+        strand = trans_obj.strand
 
-    else:
+        multimap_flag = 0
 
-        ############################################################################################################
-        ############################################################################################################
-        ############################################################################################################
+        if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
+            accept_flag = "discarded"
+            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+            outfile_cluster.write(cluster_line)
+            outfile_cluster.write("\n")
+            #skip the transcript because the mapping is poor
+            continue
 
-        bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
+        else:
 
-        outfile_lde.write(lde_outline)
-        outfile_lde.write("\n")
+            bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
 
-        if bad_sj_flag > 0:
-            #sadfsdfs
+            outfile_lde.write(lde_outline)
+            outfile_lde.write("\n")
 
-            #bad_sj_num_str_list =convert_int_list_to_string(bad_sj_num_list)
+            if bad_sj_flag > 0:
+                #sadfsdfs
 
-            #bad_sj_num_line = ",".join(bad_sj_num_str_list)
-            #bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
+                #bad_sj_num_str_list =convert_int_list_to_string(bad_sj_num_list)
 
-            #lde_file_line = "\t".join([trans_obj.cluster_id,trans_obj.scaff_name,str(trans_obj.start_pos),str(trans_obj.end_pos),trans_obj.strand,bad_sj_num_line,bad_sj_error_count_line,trans_obj.cigar])
-            #outfile_lde.write(lde_outline)
-            #outfile_lde.write("\n")
+                #bad_sj_num_line = ",".join(bad_sj_num_str_list)
+                #bad_sj_error_count_line = ",".join(bad_sj_error_count_list)
 
-            #######################################
+                #lde_file_line = "\t".join([trans_obj.cluster_id,trans_obj.scaff_name,str(trans_obj.start_pos),str(trans_obj.end_pos),trans_obj.strand,bad_sj_num_line,bad_sj_error_count_line,trans_obj.cigar])
+                #outfile_lde.write(lde_outline)
+                #outfile_lde.write("\n")
 
-            #add to cluster file
+                #######################################
 
-            accept_flag = "local_density_error"
+                #add to cluster file
+
+                accept_flag = "local_density_error"
+                cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+                outfile_cluster.write(cluster_line)
+                outfile_cluster.write("\n")
+
+                continue
+
+            accept_flag = "accepted"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
 
-            continue
+            #only run poly detetcion on accepted transcripts
+            downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
+            trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
 
-        accept_flag = "accepted"
-        cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
-        outfile_cluster.write(cluster_line)
-        outfile_cluster.write("\n")
+            #check for multi maps
+            if read_id in trans_obj_dict:
+                print("Read has multi map")
+                print(line)
+                print(percent_coverage)
+                print(percent_identity)
 
-        #only run poly detetcion on accepted transcripts
-        downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
-        trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
+                trans_obj_a = trans_obj_dict[read_id]
+                trans_obj_b = trans_obj
 
-        #check for multi maps
-        if read_id in trans_obj_dict:
-            print("Read has multi map")
-            print(line)
-            print(percent_coverage)
-            print(percent_identity)
+                best_trans_obj,best_map_id = compare_multimaps(trans_obj_a,trans_obj_b)
 
-            trans_obj_a = trans_obj_dict[read_id]
-            trans_obj_b = trans_obj
+                #only re-assign if the new map is better, otherwise old map is aready processed
+                if best_map_id == "B":
+                    trans_obj_dict[read_id] = best_trans_obj
+                    multimap_flag = 1
+                else:
+                    # if this new map is not going to be used we can skip the rest of the loop
+                    continue
 
-            best_trans_obj,best_map_id = compare_multimaps(trans_obj_a,trans_obj_b)
-
-            #only re-assign if the new map is better, otherwise old map is aready processed
-            if best_map_id == "B":
-                trans_obj_dict[read_id] = best_trans_obj
-                multimap_flag = 1
             else:
-                # if this new map is not going to be used we can skip the rest of the loop
-                continue
-
-        else:
-            trans_obj_dict[read_id] = trans_obj
+                trans_obj_dict[read_id] = trans_obj
 
 
-    #check if a read has multi mapped!
-    # remove old read info if new map is better
-    if multimap_flag == 1:
-        old_group_count = trans_group_dict[read_id]
+        #check if a read has multi mapped!
+        # remove old read info if new map is better
+        if multimap_flag == 1:
+            old_group_count = trans_group_dict[read_id]
 
-        #check that the old group is not only made up of this read mapping
-        if len(group_trans_list_dict[old_group_count]) > 1:
-            group_trans_list_dict[old_group_count].remove(read_id) # remove read from old group
-            trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+            #check that the old group is not only made up of this read mapping
+            if len(group_trans_list_dict[old_group_count]) > 1:
+                group_trans_list_dict[old_group_count].remove(read_id) # remove read from old group
+                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
 
-        elif len(group_trans_list_dict[old_group_count]) == 1: # group is only made of this mapping
-            group_trans_list_dict.pop(old_group_count, None) # remove group
-            trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
-        else:
-            print("Error with dealing with multimap management")
-            print("Warning: temrinated early!")
-            sys.exit()
+            elif len(group_trans_list_dict[old_group_count]) == 1: # group is only made of this mapping
+                group_trans_list_dict.pop(old_group_count, None) # remove group
+                trans_group_dict.pop(read_id, None) # remove read from trans_group_dict, will be re-assigned later
+            else:
+                print("Error with dealing with multimap management")
+                print("Warning: temrinated early!")
+                sys.exit()
 
-    #if read_id in trans_group_dict:
-    #    print("cluster multi mapped!")
-    #    print(line)
-    #    print(percent_coverage)
-    #    print(percent_identity)
-    #    print(trans_obj.h_count)
-    #    sys.exit()
+        #if read_id in trans_group_dict:
+        #    print("cluster multi mapped!")
+        #    print(line)
+        #    print(percent_coverage)
+        #    print(percent_identity)
+        #    print(trans_obj.h_count)
+        #    sys.exit()
 
-    #group trans by start and end coords
-    if this_scaffold == "none":
-        this_scaffold = scaff_name
-        group_start_pos = start_pos
-        group_end_pos = end_pos
-
-        group_trans_list_dict[group_count] = []
-        group_trans_list_dict[group_count].append(read_id)
-        trans_group_dict[read_id] = group_count
-
-        scaffold_list.append(this_scaffold)
-
-        continue
-
-    if scaff_name == this_scaffold:
-
-        if start_pos >= group_start_pos and start_pos <= group_end_pos: #add to group
-            group_trans_list_dict[group_count].append(read_id)
-            trans_group_dict[read_id] = group_count
-            #update group end position
-            if end_pos > group_end_pos:
-                group_end_pos = end_pos
-
-        elif start_pos > group_end_pos: #start new group
-            group_count += 1
-
+        #group trans by start and end coords
+        if this_scaffold == "none":
+            this_scaffold = scaff_name
             group_start_pos = start_pos
             group_end_pos = end_pos
 
@@ -4602,118 +5304,447 @@ for line in sam_file_contents:
             group_trans_list_dict[group_count].append(read_id)
             trans_group_dict[read_id] = group_count
 
-        elif start_pos < group_start_pos: #check if sam sorted
-            print("Sam file not sorted!")
-            print(read_id)
+            scaffold_list.append(this_scaffold)
+
+            continue
+
+        if scaff_name == this_scaffold:
+
+            if start_pos >= group_start_pos and start_pos <= group_end_pos: #add to group
+                group_trans_list_dict[group_count].append(read_id)
+                trans_group_dict[read_id] = group_count
+                #update group end position
+                if end_pos > group_end_pos:
+                    group_end_pos = end_pos
+
+            elif start_pos > group_end_pos: #start new group
+                group_count += 1
+
+                group_start_pos = start_pos
+                group_end_pos = end_pos
+
+                group_trans_list_dict[group_count] = []
+                group_trans_list_dict[group_count].append(read_id)
+                trans_group_dict[read_id] = group_count
+
+            elif start_pos < group_start_pos: #check if sam sorted
+                print("Sam file not sorted!")
+                print(read_id)
+                sys.exit()
+
+
+        else: #start new group
+            this_scaffold = scaff_name
+            group_start_pos = start_pos
+            group_end_pos = end_pos
+            group_count += 1
+
+            group_trans_list_dict[group_count] = []
+            group_trans_list_dict[group_count].append(read_id)
+            trans_group_dict[read_id] = group_count
+
+            scaffold_list.append(this_scaffold)
+
+        #check read id add
+        if group_trans_list_dict[group_count][-1] != read_id:
+            print("cluster not added to group_trans_list_dict")
+            print(str(group_count) + " " + read_id)
             sys.exit()
 
+    if bam_flag == "SAM":
+        sam_file_obj.close()
 
-    else: #start new group
-        this_scaffold = scaff_name
-        group_start_pos = start_pos
-        group_end_pos = end_pos
-        group_count += 1
+    total_group_count = group_count
+    ####################################################################################################
 
-        group_trans_list_dict[group_count] = []
-        group_trans_list_dict[group_count].append(read_id)
-        trans_group_dict[read_id] = group_count
+    ########################################################################### loop through groups
 
-        scaffold_list.append(this_scaffold)
+    merged_obj_dict = {} # merged_obj_dict[final trans id] = merged obj
+    gene_count = 0
+    trans_check_count = 0 ##########################################################################debugging
 
-    #check read id add
-    if group_trans_list_dict[group_count][-1] != read_id:
-        print("cluster not added to group_trans_list_dict")
-        print(str(group_count) + " " + read_id)
+    prev_time = track_time(start_time,prev_time)
+    print("going through groups: " + str(total_group_count))
+
+    if len(list(group_trans_list_dict.keys())) == 0:
+    #  if total_group_count == 0:
+        print("Error, no groups found!")
         sys.exit()
 
-if bam_flag == "SAM":
-    sam_file_obj.close()
+    multimap_missing_group_flag = 0
 
-total_group_count = group_count
-####################################################################################################
+    for i in xrange(total_group_count+1):
 
-########################################################################### loop through groups
+        if i not in group_trans_list_dict:
+            print("Missing group num, check for multi-maps in SAM file")
+            print("This should only occur if you have a multi-map site that no reads are preferring.")
+            multimap_missing_group_flag = 1
+            continue
 
-merged_obj_dict = {} # merged_obj_dict[final trans id] = merged obj
-gene_count = 0
-trans_check_count = 0 ##########################################################################debugging
+        trans_list = group_trans_list_dict[i]
 
-prev_time = track_time(start_time,prev_time)
-print("going through groups: " + str(total_group_count))
+        forward_trans_list = []
+        reverse_trans_list = []
 
-if len(list(group_trans_list_dict.keys())) == 0:
-#  if total_group_count == 0:
-    print("Error, no groups found!")
-    sys.exit()
+        first_trans_id = trans_list[0]
 
-multimap_missing_group_flag = 0
+        #separate into forward and reverse
+        for trans_id in trans_list:
 
-for i in xrange(total_group_count+1):
+            if trans_check_count % 1000 == 0:
+                print(trans_check_count)
+            trans_check_count += 1
 
-    if i not in group_trans_list_dict:
-        print("Missing group num, check for multi-maps in SAM file")
-        print("This should only occur if you have a multi-map site that no reads are preferring.")
-        multimap_missing_group_flag = 1
-        continue
+            trans_obj = trans_obj_dict[trans_id]
+            if trans_obj.strand == "+":
+                forward_trans_list.append(trans_id)
 
-    trans_list = group_trans_list_dict[i]
-    
+            elif trans_obj.strand == "-":
+                reverse_trans_list.append(trans_id)
+
+            ################################################# For variation coverage
+            scaffold = trans_obj.scaff_name
+            if scaffold not in var_coverage_dict:
+                print("scaffold not in var_coverage_dict")
+                print(scaffold)
+                #sys.exit()
+                continue
+
+            this_exon_start_list = trans_obj.exon_start_list
+            this_exon_end_list = trans_obj.exon_end_list
+            for exon_index in xrange(len(this_exon_start_list)):
+                this_exon_start = this_exon_start_list[exon_index]
+                this_exon_end = this_exon_end_list[exon_index]
+                for this_coord in range(this_exon_start,this_exon_end):
+                    if this_coord in var_coverage_dict[scaffold]:
+                        var_coverage_dict[scaffold][this_coord][trans_id] = 1
+                        if trans_id == "":
+                            print("Issue with trans id in var cov dict")
+                            print(trans_list)
+                            sys.exit()
+
+
+        forward_gene_start_trans_dict,forward_start_gene_list = gene_group(forward_trans_list)
+        reverse_gene_start_trans_dict,reverse_start_gene_list = gene_group(reverse_trans_list)
+
+        all_start_gene_dict = {} #     all_start_gene_dict[start] = 1
+
+        #collect all starts forward and reverse strands
+        for gene_start in forward_start_gene_list:
+            all_start_gene_dict[gene_start] = 1
+        for gene_start in reverse_gene_start_trans_dict:
+            all_start_gene_dict[gene_start] = 1
+
+        all_start_list = all_start_gene_dict.keys()
+
+        all_start_list.sort()
+
+        for gene_start in all_start_list:
+            gene_trans_obj_list = [] #list of trans obj lists
+
+            #if a forward and reverse gene start at the same place use this to make the the forward strand gene is represented first
+            if gene_start in forward_gene_start_trans_dict:
+                trans_id_list = forward_gene_start_trans_dict[gene_start].keys()
+                trans_obj_list = []
+                for trans_id in trans_id_list:
+                    trans_obj_list.append(trans_obj_dict[trans_id])
+                gene_trans_obj_list.append(trans_obj_list)
+
+            if gene_start in reverse_gene_start_trans_dict:
+                trans_id_list = reverse_gene_start_trans_dict[gene_start].keys()
+                trans_obj_list = []
+                for trans_id in trans_id_list:
+                    trans_obj_list.append(trans_obj_dict[trans_id])
+                gene_trans_obj_list.append(trans_obj_list)
+
+            #loop through list of trans obj lists, usually only one list since unlikely for forward and reverse strand genes to coincide
+            for trans_obj_list in gene_trans_obj_list:
+                gene_count += 1
+
+                #group transcripts by collapsability
+                if fiveprime_cap_flag == "capped":
+                    match_trans_group_dict,match_group_trans_dict = simplify_gene_capped(trans_obj_list,fiveprime_cap_flag)
+                elif fiveprime_cap_flag == "no_cap":
+                    match_trans_group_dict,match_group_trans_dict = simplify_gene_nocap(trans_obj_list,fiveprime_cap_flag)
+                else:
+                    print("Error with cap flag " + fiveprime_cap_flag)
+                    sys.exit()
+
+                merge_obj_list = []
+                tmp_count = 0
+                for match_group_num in match_group_trans_dict:
+                    tmp_count += 1
+                    tmp_trans_id = "G" + str(gene_count) + ".tmp." + str(tmp_count)
+                    merged_obj = Merged(tmp_trans_id)
+
+                    match_trans_id_list = match_group_trans_dict[match_group_num].keys()
+                    match_trans_obj_list = []
+                    for match_trans_id in match_trans_id_list:
+                        match_trans_obj = trans_obj_dict[match_trans_id]
+                        match_trans_obj_list.append(match_trans_obj)
+
+                        merged_obj.add_merged_trans(match_trans_obj)
+
+                    redundant_trans_flag = 0
+                    if len(match_trans_obj_list) > 1: #if there are redundant transcripts, collapse
+                        redundant_trans_flag = 1
+                        collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list = collapse_transcripts(match_trans_obj_list,fiveprime_cap_flag,collapse_flag)
+
+                        merged_obj.add_merge_info(collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
+                    else: # if only one transcript
+                        exon_start_list = match_trans_obj_list[0].exon_start_list
+                        exon_end_list = match_trans_obj_list[0].exon_end_list
+                        start_wobble_list = [0] * len(exon_start_list)
+                        end_wobble_list = [0] * len(exon_start_list)
+
+                        exon_start_list.sort()
+                        exon_end_list.sort()
+
+                        collapse_sj_start_err_list = []
+                        collapse_sj_end_err_list = []
+                        solo_trans_obj = match_trans_obj_list[0]
+                        max_exon_num = len(exon_start_list)
+
+                        collapse_start_error_nuc_list = []
+                        collapse_end_error_nuc_list = []
+
+                        for exon_index in xrange(len(exon_start_list)):  # go from 3 prime end
+                            e_start_priority, e_end_priority, e_start_priority_error,e_end_priority_error = sj_error_priority_finder(solo_trans_obj, exon_index, max_exon_num)  ####################################
+
+                            collapse_sj_start_err_list.append(e_start_priority)
+                            collapse_sj_end_err_list.append(e_end_priority)
+
+                            collapse_start_error_nuc_list.append(e_start_priority_error)
+                            collapse_end_error_nuc_list.append(e_end_priority_error)
+
+                        #collapse_sj_start_err_list = trans_obj.sj_pre_error_list
+                        #collapse_sj_end_err_list = trans_obj.sj_post_error_list
+
+                        merged_obj.add_merge_info(exon_start_list,exon_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
+
+                    merge_obj_list.append(merged_obj)
+
+
+                sorted_merge_obj_list = sort_transcripts(merge_obj_list)
+
+                trans_count = 0
+                for merged_obj in sorted_merge_obj_list:
+                    trans_count += 1
+                    final_trans_id = "G" + str(gene_count) + "." + str(trans_count)
+                    merged_obj.trans_id = final_trans_id
+                    print(final_trans_id)
+
+                    merged_obj_dict[final_trans_id] = merged_obj
+
+                    #write out to bed file
+                    bed_line = merged_obj.format_bed_line()
+                    outfile_bed.write(bed_line)
+                    outfile_bed.write("\n")
+
+                    #write out to transcript report file
+                    trans_report_line = merged_obj.format_trans_report_line()
+                    outfile_trans_report.write(trans_report_line)
+                    outfile_trans_report.write("\n")
+
+                    #write out to rt switch file
+                    num_junct_bind,bind_seq_dict = detect_rt_switch(merged_obj)
+                    if num_junct_bind > 0 :
+                        for junct_num in bind_seq_dict:
+                            first_seq = "".join(bind_seq_dict[junct_num][1])
+                            second_seq = "".join(bind_seq_dict[junct_num][2])
+                            rec_comp_seq = "".join(bind_seq_dict[junct_num][3])
+
+                            rtswitch_line = "\t".join([final_trans_id,str(junct_num),first_seq,second_seq,rec_comp_seq])
+
+                            #outfile_rtswitch.write(rtswitch_line)
+                            #outfile_rtswitch.write("\n")
+
+                    #write out to transcript cluster report file
+                    for merged_trans_id in merged_obj.merged_trans_dict:
+                        merged_trans_obj = merged_obj.merged_trans_dict[merged_trans_id]
+                        cluster_id = merged_trans_obj.cluster_id
+                        scaff_name = merged_trans_obj.scaff_name
+                        strand = merged_trans_obj.strand
+                        start_pos = merged_trans_obj.start_pos
+                        end_pos = merged_trans_obj.end_pos
+
+                        exon_start_line,exon_end_line = merged_trans_obj.make_exon_start_end_lines()
+
+                        merge_trans_bed_line = merged_trans_obj.format_bed_line(final_trans_id)
+                        #trans_clust_list = []
+                        #trans_clust_list.append(final_trans_id)
+                        #trans_clust_list.append(cluster_id)
+                        #trans_clust_list.append(scaff_name)
+                        #trans_clust_list.append(strand)
+                        #trans_clust_list.append(str(start_pos))
+                        #trans_clust_list.append(str(end_pos))
+                        #trans_clust_list.append(exon_start_line)
+                        #trans_clust_list.append(exon_end_line)
+
+                        #trans_clust_line = "\t".join(trans_clust_list)
+                        outfile_trans_clust_report.write(merge_trans_bed_line)
+                        outfile_trans_clust_report.write("\n")
+
+                        #write out to polya file
+                        downstream_seq = "".join(merged_trans_obj.downstream_seq)
+                        dseq_length = merged_trans_obj.dseq_length
+                        a_count = merged_trans_obj.a_count
+                        a_percent = merged_trans_obj.a_percent * 100
+
+
+                        if a_percent > a_perc_thresh:
+                            a_percent_string =str(round(a_percent,2))
+                            polya_file_line = "\t".join([cluster_id,final_trans_id,strand,a_percent_string,str(a_count),downstream_seq])
+                            outfile_polya.write(polya_file_line)
+                            outfile_polya.write("\n")
+
+
+    # original mode end ##############################################
+    ############################################################################################################
+    ############################################################################################################
+    ############################################################################################################
+
+############################################################################################################
+############################################################################################################
+# no multimap mode start (low mem) ##############################################
+
+##################################################################################################
+##################################################################################################
+# variation functions for low mem mode
+def process_variation(scaffold,variation_dict,var_coverage_dict,var_support_threshold):
+
+    cov_group_var_dict = {} # cov_group_var_dict[cov group line][position line] = 1
+    cov_group_var_list = []
+
+    var_type_list = []
+    var_type_list.append("H")
+    var_type_list.append("S")
+    var_type_list.append("M")
+    var_type_list.append("I")
+    var_type_list.append("D")
+
+    if scaffold not in variation_dict:
+        print("error with scaffold match in loci_variation")
+        print(variation_dict.keys())
+        sys.exit()
+
+
+    position_list = []
+    position_list = list(variation_dict[scaffold].keys())
+    position_list.sort()
+
+    for var_pos in position_list:
+
+        var_cov_trans_id_list = list(var_coverage_dict[scaffold][var_pos].keys())
+        var_cov_trans_id_list.sort()
+        var_coverage = len(var_cov_trans_id_list)
+
+        var_pos_accept_flag = 0 # Use this to signal if a variation ahs passed threshold for this position
+        for var_type in var_type_list:
+
+            if var_type not in variation_dict[scaffold][var_pos]:
+                continue
+
+            for alt_seq in variation_dict[scaffold][var_pos][var_type]:
+
+                read_list = list(variation_dict[scaffold][var_pos][var_type][alt_seq].keys())
+
+                var_support_count = len(read_list)
+
+                if var_support_count >= var_support_threshold:
+                    var_pos_accept_flag = 1
+
+                    #scaffold        position        type    alt_allele      count  cov_count   cluster_list
+                    var_outlist = []
+                    var_outlist.append(scaffold)
+                    var_outlist.append(str(var_pos))
+                    var_outlist.append(var_type)
+                    var_outlist.append(alt_seq)
+                    var_outlist.append(str(var_support_count))
+                    var_outlist.append(str(var_coverage))
+
+                    read_line = ",".join(read_list)
+                    var_outlist.append(read_line)
+
+                    var_outline = "\t".join(var_outlist)
+                    outfile_variant.write(var_outline)
+                    outfile_variant.write("\n")
+
+        #Update variant coverage
+
+        if var_pos_accept_flag == 1:
+            var_cov_trans_line = ",".join(var_cov_trans_id_list)
+            position_line = "_".join([scaffold,str(var_pos)])
+            if var_cov_trans_line not in cov_group_var_dict:
+                cov_group_var_dict[var_cov_trans_line] = {}
+                cov_group_var_list.append(var_cov_trans_line)
+            cov_group_var_dict[var_cov_trans_line][position_line] = 1
+
+
+
+    ################################################################################# write to var coverage file
+
+
+    for cov_line in cov_group_var_list:
+        position_list = list(cov_group_var_dict[cov_line].keys())
+        position_list.sort()
+
+        all_pos_line = ",".join(position_list)
+
+        varcov_file_line = "\t".join([all_pos_line,cov_line])
+
+        outfile_varcov.write(varcov_file_line)
+        outfile_varcov.write("\n")
+
+    del variation_dict
+    del var_coverage_dict
+
+
+
+##################################################################################################
+##################################################################################################
+
+
+def process_loci(this_trans_obj_dict,trans_list,this_gene_count):
+
+    merged_obj_dict = {}  # merged_obj_dict[final trans id] = merged obj
+
+
     forward_trans_list = []
     reverse_trans_list = []
-    
+
     first_trans_id = trans_list[0]
-    
+
     #separate into forward and reverse
     for trans_id in trans_list:
-        
-        if trans_check_count % 1000 == 0:
-            print(trans_check_count)
-        trans_check_count += 1
 
-        trans_obj = trans_obj_dict[trans_id]
+        #if trans_check_count % 1000 == 0:
+        #    print(trans_check_count)
+        #trans_check_count += 1
+
+        trans_obj = this_trans_obj_dict[trans_id]
         if trans_obj.strand == "+":
             forward_trans_list.append(trans_id)
-            
+
         elif trans_obj.strand == "-":
             reverse_trans_list.append(trans_id)
-        
-        ################################################# For variation coverage
-        scaffold = trans_obj.scaff_name
-        if scaffold not in var_coverage_dict:
-            print("scaffold not in var_coverage_dict")
-            print(scaffold)
-            #sys.exit()
-            continue
-        
-        this_exon_start_list = trans_obj.exon_start_list
-        this_exon_end_list = trans_obj.exon_end_list
-        for exon_index in xrange(len(this_exon_start_list)):
-            this_exon_start = this_exon_start_list[exon_index]
-            this_exon_end = this_exon_end_list[exon_index]
-            for this_coord in range(this_exon_start,this_exon_end):
-                if this_coord in var_coverage_dict[scaffold]:
-                    var_coverage_dict[scaffold][this_coord][trans_id] = 1
-                    if trans_id == "":
-                        print("Issue with trans id in var cov dict")
-                        print(trans_list)
-                        sys.exit()
-                        
+
 
     forward_gene_start_trans_dict,forward_start_gene_list = gene_group(forward_trans_list)
     reverse_gene_start_trans_dict,reverse_start_gene_list = gene_group(reverse_trans_list)
-    
+
     all_start_gene_dict = {} #     all_start_gene_dict[start] = 1
-    
+
     #collect all starts forward and reverse strands
     for gene_start in forward_start_gene_list:
         all_start_gene_dict[gene_start] = 1
     for gene_start in reverse_gene_start_trans_dict:
         all_start_gene_dict[gene_start] = 1
-    
+
     all_start_list = all_start_gene_dict.keys()
-    
+
     all_start_list.sort()
-    
+
     for gene_start in all_start_list:
         gene_trans_obj_list = [] #list of trans obj lists
 
@@ -4722,20 +5753,20 @@ for i in xrange(total_group_count+1):
             trans_id_list = forward_gene_start_trans_dict[gene_start].keys()
             trans_obj_list = []
             for trans_id in trans_id_list:
-                trans_obj_list.append(trans_obj_dict[trans_id])
+                trans_obj_list.append(this_trans_obj_dict[trans_id])
             gene_trans_obj_list.append(trans_obj_list)
-        
+
         if gene_start in reverse_gene_start_trans_dict:
             trans_id_list = reverse_gene_start_trans_dict[gene_start].keys()
             trans_obj_list = []
             for trans_id in trans_id_list:
-                trans_obj_list.append(trans_obj_dict[trans_id])
+                trans_obj_list.append(this_trans_obj_dict[trans_id])
             gene_trans_obj_list.append(trans_obj_list)
-            
+
         #loop through list of trans obj lists, usually only one list since unlikely for forward and reverse strand genes to coincide
-        for trans_obj_list in gene_trans_obj_list:      
-            gene_count += 1
-            
+        for trans_obj_list in gene_trans_obj_list:
+            this_gene_count += 1
+
             #group transcripts by collapsability
             if fiveprime_cap_flag == "capped":
                 match_trans_group_dict,match_group_trans_dict = simplify_gene_capped(trans_obj_list,fiveprime_cap_flag)
@@ -4749,29 +5780,29 @@ for i in xrange(total_group_count+1):
             tmp_count = 0
             for match_group_num in match_group_trans_dict:
                 tmp_count += 1
-                tmp_trans_id = "G" + str(gene_count) + ".tmp." + str(tmp_count)
+                tmp_trans_id = "G" + str(this_gene_count) + ".tmp." + str(tmp_count)
                 merged_obj = Merged(tmp_trans_id)
-                
+
                 match_trans_id_list = match_group_trans_dict[match_group_num].keys()
                 match_trans_obj_list = []
                 for match_trans_id in match_trans_id_list:
-                    match_trans_obj = trans_obj_dict[match_trans_id]
+                    match_trans_obj = this_trans_obj_dict[match_trans_id]
                     match_trans_obj_list.append(match_trans_obj)
-                    
+
                     merged_obj.add_merged_trans(match_trans_obj)
-                
+
                 redundant_trans_flag = 0
                 if len(match_trans_obj_list) > 1: #if there are redundant transcripts, collapse
                     redundant_trans_flag = 1
                     collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list = collapse_transcripts(match_trans_obj_list,fiveprime_cap_flag,collapse_flag)
-                    
+
                     merged_obj.add_merge_info(collapse_start_list,collapse_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
                 else: # if only one transcript
                     exon_start_list = match_trans_obj_list[0].exon_start_list
                     exon_end_list = match_trans_obj_list[0].exon_end_list
                     start_wobble_list = [0] * len(exon_start_list)
                     end_wobble_list = [0] * len(exon_start_list)
-                    
+
                     exon_start_list.sort()
                     exon_end_list.sort()
 
@@ -4796,31 +5827,31 @@ for i in xrange(total_group_count+1):
                     #collapse_sj_end_err_list = trans_obj.sj_post_error_list
 
                     merged_obj.add_merge_info(exon_start_list,exon_end_list,start_wobble_list,end_wobble_list,collapse_sj_start_err_list,collapse_sj_end_err_list,collapse_start_error_nuc_list,collapse_end_error_nuc_list )
-                
+
                 merge_obj_list.append(merged_obj)
-                
-            
+
+
             sorted_merge_obj_list = sort_transcripts(merge_obj_list)
-            
+
             trans_count = 0
             for merged_obj in sorted_merge_obj_list:
                 trans_count += 1
-                final_trans_id = "G" + str(gene_count) + "." + str(trans_count)
+                final_trans_id = "G" + str(this_gene_count) + "." + str(trans_count)
                 merged_obj.trans_id = final_trans_id
                 print(final_trans_id)
-                
+
                 merged_obj_dict[final_trans_id] = merged_obj
-                
+
                 #write out to bed file
                 bed_line = merged_obj.format_bed_line()
                 outfile_bed.write(bed_line)
                 outfile_bed.write("\n")
-                
+
                 #write out to transcript report file
                 trans_report_line = merged_obj.format_trans_report_line()
                 outfile_trans_report.write(trans_report_line)
                 outfile_trans_report.write("\n")
-                
+
                 #write out to rt switch file
                 num_junct_bind,bind_seq_dict = detect_rt_switch(merged_obj)
                 if num_junct_bind > 0 :
@@ -4828,12 +5859,12 @@ for i in xrange(total_group_count+1):
                         first_seq = "".join(bind_seq_dict[junct_num][1])
                         second_seq = "".join(bind_seq_dict[junct_num][2])
                         rec_comp_seq = "".join(bind_seq_dict[junct_num][3])
-                        
+
                         rtswitch_line = "\t".join([final_trans_id,str(junct_num),first_seq,second_seq,rec_comp_seq])
-                        
+
                         #outfile_rtswitch.write(rtswitch_line)
                         #outfile_rtswitch.write("\n")
-                
+
                 #write out to transcript cluster report file
                 for merged_trans_id in merged_obj.merged_trans_dict:
                     merged_trans_obj = merged_obj.merged_trans_dict[merged_trans_id]
@@ -4844,133 +5875,412 @@ for i in xrange(total_group_count+1):
                     end_pos = merged_trans_obj.end_pos
 
                     exon_start_line,exon_end_line = merged_trans_obj.make_exon_start_end_lines()
-                    
+
                     merge_trans_bed_line = merged_trans_obj.format_bed_line(final_trans_id)
-                    #trans_clust_list = []
-                    #trans_clust_list.append(final_trans_id)
-                    #trans_clust_list.append(cluster_id)
-                    #trans_clust_list.append(scaff_name)
-                    #trans_clust_list.append(strand)
-                    #trans_clust_list.append(str(start_pos))
-                    #trans_clust_list.append(str(end_pos))
-                    #trans_clust_list.append(exon_start_line)
-                    #trans_clust_list.append(exon_end_line)
-                
+
                     #trans_clust_line = "\t".join(trans_clust_list)
                     outfile_trans_clust_report.write(merge_trans_bed_line)
                     outfile_trans_clust_report.write("\n")
-                    
+
                     #write out to polya file
                     downstream_seq = "".join(merged_trans_obj.downstream_seq)
                     dseq_length = merged_trans_obj.dseq_length
                     a_count = merged_trans_obj.a_count
                     a_percent = merged_trans_obj.a_percent * 100
 
-                    
+
                     if a_percent > a_perc_thresh:
                         a_percent_string =str(round(a_percent,2))
                         polya_file_line = "\t".join([cluster_id,final_trans_id,strand,a_percent_string,str(a_count),downstream_seq])
                         outfile_polya.write(polya_file_line)
                         outfile_polya.write("\n")
-                        
-    
 
+
+    #del this_trans_obj_dict
+    #del trans_list
+
+    return this_gene_count
+
+
+############################################################################################################
+############################################################################################################
+
+if run_mode_flag == "low_mem":
+    gene_count = 0
+
+    trans_obj_dict = {} # trans_obj_dict[cluster id] = trans obj
+    group_trans_list = []
+
+
+    for line in sam_file_contents:
+
+        #if sam_count == 0:
+        #    print(line)
+
+        line_split = line.split("\t")
+
+        if line.startswith("@"):
+            continue
+
+        if line == "":
+            continue
+
+        sam_count += 1
+        if sam_count % 5000 == 0:
+            print("sam count " + str(sam_count))
+
+        read_id = line_split[0]
+        sam_flag = int(line_split[1])
+        scaff_name = line_split[2]
+        start_pos = int(line_split[3])
+
+        cigar = line_split[5]
+        read_seq = line_split[9]
+        seq_list = list(read_seq)
+        mapped_flag = sam_flag_dict[sam_flag]
+
+        ####################################
+        #Check sam and gmap strand info!!!
+        #get strand information from gmap flag
+
+        xs_flag = "na"
+        for field in line_split:
+            if "XS:A:" in field:
+                xs_flag = field.split(":")[-1]
+
+        if mapped_flag == "forward_strand"  and xs_flag == "-":
+            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"+-"])
+            outfile_strand.write(outline_strand)
+            outfile_strand.write("\n")
+        elif mapped_flag == "reverse_strand" and xs_flag == "+":
+            outline_strand = "\t".join([read_id,scaff_name,str(start_pos),cigar,"-+"])
+            outfile_strand.write(outline_strand)
+            outfile_strand.write("\n")
+
+        #
+        # Above: Check sam and gmap strand info!!!
+        ####################################
+
+        if mapped_flag == "unmapped" or mapped_flag == "not_primary" or mapped_flag == "chimeric" :
+            unmapped_dict[read_id] = 1
+            accept_flag = mapped_flag # added this 2019/03/04
+            percent_coverage = "NA"
+            percent_identity = "NA"
+            error_line = "NA"
+            quality_percent = "NA"
+            length = "NA"
+            strand = "NA"
+            cigar = "NA"
+
+            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
+            outfile_cluster.write(cluster_line)
+            outfile_cluster.write("\n")
+            continue
+
+
+        map_seq_length = mapped_seq_length(cigar)
+
+        [end_pos,exon_start_list,exon_end_list] = trans_coordinates(start_pos,cigar)
+
+        [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate_lowmem(start_pos,cigar,seq_list,scaff_name,read_id)
+
+        trans_obj = Transcript(read_id)
+        trans_obj.add_sam_info(sam_flag,scaff_name,start_pos,cigar,read_seq,seq_list)
+        trans_obj.add_map_seq_length(map_seq_length)
+        trans_obj.add_exon_coords(end_pos,exon_start_list,exon_end_list)
+        trans_obj.add_mismatch(h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list)
+
+        ##### 2020/07/27 sj hash
+        #trans_obj.make_sj_hash_string()
+        ##### 2020/07/27 sj hash
+
+
+        percent_coverage = trans_obj.calc_coverage()
+        percent_identity = trans_obj.calc_identity()
+
+        percent_coverage_str = str(round(percent_coverage,2))
+        percent_identity_str = str(round(percent_identity,2))
+
+        error_line = trans_obj.make_error_line()
+        seq_length = trans_obj.seq_length
+        strand = trans_obj.strand
+
+        multimap_flag = 0
+
+        if percent_coverage < coverage_threshold or percent_identity < identity_threshold:
+            accept_flag = "discarded"
+            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+            outfile_cluster.write(cluster_line)
+            outfile_cluster.write("\n")
+            #skip the transcript because the mapping is poor
+            continue
+
+        else:
+
+            bad_sj_flag,bad_sj_num_list,bad_sj_num_pre_list,bad_sj_num_post_list,bad_sj_error_count_list,lde_outline = sj_error_local_density(trans_obj)
+
+            outfile_lde.write(lde_outline)
+            outfile_lde.write("\n")
+
+            if bad_sj_flag > 0:
+
+
+                accept_flag = "local_density_error"
+                cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+                outfile_cluster.write(cluster_line)
+                outfile_cluster.write("\n")
+
+                continue
+
+            accept_flag = "accepted"
+            cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
+            outfile_cluster.write(cluster_line)
+            outfile_cluster.write("\n")
+
+            #only run poly detection on accepted transcripts
+            downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
+            trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
+
+            trans_obj_dict[read_id] = trans_obj
+
+        #group trans by start and end coords
+        if this_scaffold == "none":
+            this_scaffold = scaff_name
+            group_start_pos = start_pos
+            group_end_pos = end_pos
+
+            group_trans_list = []
+            group_trans_list.append(read_id)
+
+            scaffold_list.append(this_scaffold)
+
+            continue
+
+        if scaff_name == this_scaffold:
+
+            if start_pos >= group_start_pos and start_pos <= group_end_pos: #add to group
+
+                # this is so we can get variation information after confirming the read belongs to this group
+                # 2020/07/31
+                calc_variation(start_pos, cigar, seq_list, scaff_name, read_id)
+
+                group_trans_list.append(read_id)
+                #update group end position
+                if end_pos > group_end_pos:
+                    group_end_pos = end_pos
+
+            elif start_pos > group_end_pos: #start new group #################################
+
+                # clear new read id from new group
+                trans_obj_dict.pop(read_id, None)
+
+                gene_count = process_loci(trans_obj_dict,group_trans_list, gene_count) #################################### 2020/07/30
+                #if variation_dict:
+                #    if len(group_trans_list) >= var_support_threshold:
+                #        process_variation(this_scaffold, variation_dict, var_coverage_dict,var_support_threshold)
+
+                #        #refresh variation dict
+                #        #del variation_dict
+                #        #del var_coverage_dict
+                #        variation_dict = {}
+                #        var_coverage_dict = {}
+
+                # add variation information from first read of new group
+                # 2020/07/31
+                #calc_variation(start_pos, cigar, seq_list, scaff_name, read_id)
+                [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate_lowmem(start_pos,cigar,seq_list,scaff_name,read_id)
+
+                group_count += 1
+
+                group_start_pos = start_pos
+                group_end_pos = end_pos
+
+                #del trans_obj_dict
+                trans_obj_dict = {}  # trans_obj_dict[cluster id] = trans obj # refresh this dict to save memory
+                trans_obj_dict[read_id] = trans_obj
+
+                #del group_trans_list
+                group_trans_list = []  # refresh this dict to save memory
+                group_trans_list.append(read_id)
+
+
+
+            elif start_pos < group_start_pos: #check if sam sorted
+                print("Sam file not sorted!")
+                print(read_id)
+                sys.exit()
+
+
+        else: #start new group #################################
+
+            # clear new read id from new group
+            trans_obj_dict.pop(read_id, None)
+
+            gene_count = process_loci(trans_obj_dict, group_trans_list, gene_count)  #################################### 2020/07/30
+
+            #if variation_dict:
+            #    if len(group_trans_list) >= var_support_threshold:
+            #        process_variation(this_scaffold, variation_dict, var_coverage_dict,var_support_threshold)
+            #
+            #        #refresh variation dict
+            #        #del variation_dict
+            #        #del var_coverage_dict
+            #        variation_dict = {}
+            #        var_coverage_dict = {}
+
+            # add variation information from first read of new group
+            # 2020/07/31
+            #calc_variation(start_pos, cigar, seq_list, scaff_name, read_id)
+            [h_count,s_count,i_count,d_count,mis_count,nomatch_dict,sj_pre_error_list,sj_post_error_list] =  calc_error_rate_lowmem(start_pos,cigar,seq_list,scaff_name,read_id)
+
+            this_scaffold = scaff_name
+            group_start_pos = start_pos
+            group_end_pos = end_pos
+            group_count += 1
+
+            scaffold_list.append(this_scaffold)
+
+            #del trans_obj_dict
+            trans_obj_dict = {}  # trans_obj_dict[cluster id] = trans obj # refresh this dict to save memory
+            trans_obj_dict[read_id] = trans_obj
+
+            #del group_trans_list
+            group_trans_list = []  # refresh this dict to save memory
+            group_trans_list.append(read_id)
+
+    # make sure to handle the last group for the low mem mode
+    # this is not an issue with the original mode because you collect groups as you go along.
+    # but in low mem mode you only process a group when a new group is found.
+    gene_count = process_loci(trans_obj_dict, group_trans_list, gene_count)  #################################### 2020/07/30
+    #if variation_dict:
+    #    if len(group_trans_list) >= var_support_threshold:
+    #        process_variation(this_scaffold, variation_dict, var_coverage_dict,var_support_threshold)
+
+    #        #refresh variation dict
+    #        #del variation_dict
+    #        #del var_coverage_dict
+    #        variation_dict = {}
+    #        var_coverage_dict = {}
+
+    if bam_flag == "SAM":
+        sam_file_obj.close()
+
+    total_group_count = group_count
+    ####################################################################################################
+
+    ########################################################################### loop through groups
+
+    prev_time = track_time(start_time,prev_time)
+
+
+
+
+# no multimap mode end (low mem) ##############################################
+############################################################################################################
+############################################################################################################
 
 ################################################################################# write to variation file
 
-cov_group_var_dict = {} # cov_group_var_dict[cov group line][position line] = 1
-cov_group_var_list = []
 
-var_type_list = []
-var_type_list.append("H")
-var_type_list.append("S")
-var_type_list.append("M")
-var_type_list.append("I")
-var_type_list.append("D")
+if run_mode_flag == "original":
 
-var_support_threshold = 5
+    cov_group_var_dict = {} # cov_group_var_dict[cov group line][position line] = 1
+    cov_group_var_list = []
+
+    var_type_list = []
+    var_type_list.append("H")
+    var_type_list.append("S")
+    var_type_list.append("M")
+    var_type_list.append("I")
+    var_type_list.append("D")
+
+    var_support_threshold = 5
+
+    prev_time = track_time(start_time,prev_time)
+    print("Writing variant file")
+    for scaffold in scaffold_list:
+
+        if scaffold not in variation_dict:
+            continue
+
+        position_list = []
+        position_list = list(variation_dict[scaffold].keys())
+        position_list.sort()
+
+        for var_pos in position_list:
+
+            var_cov_trans_id_list = list(var_coverage_dict[scaffold][var_pos].keys())
+            var_cov_trans_id_list.sort()
+            var_coverage = len(var_cov_trans_id_list)
+
+            var_pos_accept_flag = 0 # Use this to signal if a variation ahs passed threshold for this position
+            for var_type in var_type_list:
+
+                if var_type not in variation_dict[scaffold][var_pos]:
+                    continue
+
+                for alt_seq in variation_dict[scaffold][var_pos][var_type]:
+
+                    read_list = list(variation_dict[scaffold][var_pos][var_type][alt_seq].keys())
+
+                    var_support_count = len(read_list)
+
+                    if var_support_count >= var_support_threshold:
+                        var_pos_accept_flag = 1
+
+                        #scaffold        position        type    alt_allele      count  cov_count   cluster_list
+                        var_outlist = []
+                        var_outlist.append(scaffold)
+                        var_outlist.append(str(var_pos))
+                        var_outlist.append(var_type)
+                        var_outlist.append(alt_seq)
+                        var_outlist.append(str(var_support_count))
+                        var_outlist.append(str(var_coverage))
+
+                        read_line = ",".join(read_list)
+                        var_outlist.append(read_line)
+
+                        var_outline = "\t".join(var_outlist)
+                        outfile_variant.write(var_outline)
+                        outfile_variant.write("\n")
+
+            #Update variant coverage
+
+            if var_pos_accept_flag == 1:
+                var_cov_trans_line = ",".join(var_cov_trans_id_list)
+                position_line = "_".join([scaffold,str(var_pos)])
+                if var_cov_trans_line not in cov_group_var_dict:
+                    cov_group_var_dict[var_cov_trans_line] = {}
+                    cov_group_var_list.append(var_cov_trans_line)
+                cov_group_var_dict[var_cov_trans_line][position_line] = 1
+
+
+
+    prev_time = track_time(start_time,prev_time)
+
+    ################################################################################# write to var coverage file
+
+
+    for cov_line in cov_group_var_list:
+        position_list = list(cov_group_var_dict[cov_line].keys())
+        position_list.sort()
+
+        all_pos_line = ",".join(position_list)
+
+        varcov_file_line = "\t".join([all_pos_line,cov_line])
+
+        outfile_varcov.write(varcov_file_line)
+        outfile_varcov.write("\n")
+
+
+
+
 
 prev_time = track_time(start_time,prev_time)
-print("Writing variant file")
-for scaffold in scaffold_list:
-    
-    if scaffold not in variation_dict:
-        continue
-    
-    position_list = []
-    position_list = list(variation_dict[scaffold].keys())
-    position_list.sort()
-    
-    for var_pos in position_list:
-        
-        var_cov_trans_id_list = list(var_coverage_dict[scaffold][var_pos].keys())
-        var_cov_trans_id_list.sort()
-        var_coverage = len(var_cov_trans_id_list)
-        
-        var_pos_accept_flag = 0 # Use this to signal if a variation ahs passed threshold for this position
-        for var_type in var_type_list:
-            
-            if var_type not in variation_dict[scaffold][var_pos]:
-                continue
-            
-            for alt_seq in variation_dict[scaffold][var_pos][var_type]:
-                
-                read_list = list(variation_dict[scaffold][var_pos][var_type][alt_seq].keys())
-                
-                var_support_count = len(read_list)
-                
-                if var_support_count >= var_support_threshold:
-                    var_pos_accept_flag = 1
 
-                    #scaffold        position        type    alt_allele      count  cov_count   cluster_list  
-                    var_outlist = []
-                    var_outlist.append(scaffold)
-                    var_outlist.append(str(var_pos))
-                    var_outlist.append(var_type)
-                    var_outlist.append(alt_seq)
-                    var_outlist.append(str(var_support_count))
-                    var_outlist.append(str(var_coverage))
-                    
-                    read_line = ",".join(read_list)
-                    var_outlist.append(read_line)
-
-                    var_outline = "\t".join(var_outlist)
-                    outfile_variant.write(var_outline)
-                    outfile_variant.write("\n")
-        
-        #Update variant coverage
-        
-        if var_pos_accept_flag == 1:
-            var_cov_trans_line = ",".join(var_cov_trans_id_list)
-            position_line = "_".join([scaffold,str(var_pos)])
-            if var_cov_trans_line not in cov_group_var_dict:
-                cov_group_var_dict[var_cov_trans_line] = {}
-                cov_group_var_list.append(var_cov_trans_line)
-            cov_group_var_dict[var_cov_trans_line][position_line] = 1
-        
-
-
-prev_time = track_time(start_time,prev_time)
-
-################################################################################# write to var coverage file
-
-
-for cov_line in cov_group_var_list:
-    position_list = list(cov_group_var_dict[cov_line].keys())
-    position_list.sort()
-    
-    all_pos_line = ",".join(position_list)
-    
-    varcov_file_line = "\t".join([all_pos_line,cov_line])
-    
-    outfile_varcov.write(varcov_file_line)
-    outfile_varcov.write("\n")
-    
-
-prev_time = track_time(start_time,prev_time)
-    
-if multimap_missing_group_flag == 1:
-    print("Missing group num, check for multi-maps in SAM file")
-    print("This should only occur if you have a multi-map site that no reads are preferring.")
+if run_mode_flag == "original":
+    if multimap_missing_group_flag == 1:
+        print("Missing group num, check for multi-maps in SAM file")
+        print("This should only occur if you have a multi-map site that no reads are preferring.")
 
 print("TAMA Collapse has successfully finished running!")
