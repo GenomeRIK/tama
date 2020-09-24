@@ -41,7 +41,10 @@ class Transcript:
         line_split = trans_line.split("\t")
         anno_line = line_split[8]
         anno_split = anno_line.split(";")
-        
+
+        self.gene_class = "NA"
+        self.trans_class = "NA"
+
         for subfield in anno_split:
             if "gene_id" in subfield:
                 self.gene_id = subfield.split("\"")[1]
@@ -165,7 +168,10 @@ class Exon:
             if "transcript_id" in subfield:
                 self.trans_id = subfield.split("\"")[1]
             if "exon_number" in subfield:
-                self.exon_num = subfield.split("\"")[1]
+                if "\"" in subfield:
+                    self.exon_num = subfield.split("\"")[1]
+                else:
+                    self.exon_num = subfield.split()[1]
         
         self.e_start = int(line_split[3]) - 1
         self.e_end = int(line_split[4])
