@@ -280,7 +280,7 @@ outfile_trans_clust_report = open(trans_clust_outfile_name,"w")
 if run_mode_flag == "original":
     variant_outfile_name = outfile_prefix + "_variants.txt"
     outfile_variant = open(variant_outfile_name,"w")
-    variant_file_line = "\t".join(["scaffold","position","type","alt_allele","count","cov_count","cluster_list"])
+    variant_file_line = "\t".join(["scaffold","position","type","ref_allele","alt_allele","count","cov_count","cluster_list"])
     outfile_variant.write(variant_file_line)
     outfile_variant.write("\n")
 
@@ -6213,11 +6213,17 @@ if run_mode_flag == "original":
             var_cov_trans_id_list.sort()
             var_coverage = len(var_cov_trans_id_list)
 
+            ref_allele = fasta_dict[scaffold][var_pos]
+
             var_pos_accept_flag = 0 # Use this to signal if a variation ahs passed threshold for this position
             for var_type in var_type_list:
 
                 if var_type not in variation_dict[scaffold][var_pos]:
                     continue
+
+                if var_type != "M":
+                    ref_allele = "NA"
+
 
                 for alt_seq in variation_dict[scaffold][var_pos][var_type]:
 
@@ -6233,6 +6239,7 @@ if run_mode_flag == "original":
                         var_outlist.append(scaffold)
                         var_outlist.append(str(var_pos))
                         var_outlist.append(var_type)
+                        var_outlist.append(ref_allele)
                         var_outlist.append(alt_seq)
                         var_outlist.append(str(var_support_count))
                         var_outlist.append(str(var_coverage))
