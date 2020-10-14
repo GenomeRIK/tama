@@ -50,6 +50,7 @@ ap.add_argument('-d', type=str, nargs=1, help='Flag for merging duplicate transc
 
 ap.add_argument('-s', type=str, nargs=1, help='Use gene and transcript ID from a merge source. Specify source name from filelist file here.')
 
+ap.add_argument('-cds', type=str, nargs=1, help='Use CDS from a merge source. Specify source name from filelist file here.')
 
 opts = ap.parse_args()
 
@@ -99,6 +100,17 @@ if not opts.s:
     source_id_flag = "no_source_id"
 else:
     source_id_flag = str(opts.s[0])
+
+    source_id_flag_list = source_id_flag.split(",")
+
+if not opts.cds:
+    print("Default CDS merge flag: no_cds")
+    source_cds_flag = "no_cds"
+else:
+    source_cds_flag = str(opts.cds[0])
+
+    source_cds_flag_list = source_cds_flag.split(",")
+
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
@@ -320,8 +332,8 @@ class Merged:
     def __init__(self, trans_id):
         self.trans_id = trans_id
 
-        self.extra_trans_id = "NA"
-        self.extra_gene_id = "NA"
+        self.extra_trans_id_list = "NA"
+        self.extra_gene_id_list = "NA"
         
         #same as collapse start and end list but used for flexibility in calling
         self.exon_start_list = [] 
@@ -343,6 +355,9 @@ class Merged:
         
         self.start_pos = 0
         self.end_pos = 0
+
+        self.start_cds = 0
+        self.end_cds = 0
         
         self.num_exons = 0
         
@@ -429,17 +444,31 @@ class Merged:
         gene_id = self.trans_id.split(".")[0]
 
 
-        if self.extra_trans_id == "NA":
+        if self.extra_trans_id_list == "NA":
             id_line = ";".join([gene_id,self.trans_id])
         else:
-            id_line = ";".join([gene_id, self.trans_id, self.extra_gene_id, self.extra_trans_id])
-        
+            this_id_line_list = []
+            this_id_line_list.append(gene_id)
+            this_id_line_list.append(self.trans_id)
+
+            for k in xrange(len(self.extra_gene_id_list)):
+                this_id_line_list.append(self.extra_gene_id_list[k])
+                this_id_line_list.append(self.extra_trans_id_list[k])
+
+            id_line = ";".join(this_id_line_list)
+
+
         bed_list.append(str(id_line))
         bed_list.append("40")
         bed_list.append(self.strand)
+
+        if self.start_cds != 0:
+            bed_list.append(str(self.start_cds))
+            bed_list.append(str(self.end_cds))
         
-        bed_list.append(str(self.start_pos))
-        bed_list.append(str(self.end_pos))
+        else:
+            bed_list.append(str(self.start_pos))
+            bed_list.append(str(self.end_pos))
         
         
         this_source_dict = {} # this_source_dict[source] = 1
@@ -3408,11 +3437,30 @@ def process_trans_group(trans_line_list, total_gene_count):
                         this_source_name_split.pop(0)
                         this_source_trans_id = "_".join(this_source_name_split)
 
+                        for this_source_id_flag in source_id_flag_list:
+                            if this_source_id_flag == this_source_name:
+                                this_source_gene_id = source_trans_gene_dict[this_source_name][this_source_trans_id]##################################################
 
-                        if source_id_flag == this_source_name:
-                            this_source_gene_id = source_trans_gene_dict[this_source_name][this_source_trans_id]##################################################
-                            merged_obj.extra_trans_id = this_source_trans_id
-                            merged_obj.extra_gene_id = this_source_gene_id
+                                if merged_obj.extra_trans_id_list == "NA":
+                                    merged_obj.extra_trans_id_list = []
+                                    merged_obj.extra_gene_id_list = []
+
+                                merged_obj.extra_trans_id_list.append(this_source_trans_id)
+                                merged_obj.extra_gene_id_list.append(this_source_gene_id)
+
+                    ### add CDS information from a source file
+                    if source_cds_flag !=  "no_cds": ##################################################AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+                        this_source_name_split = merged_trans_id.split("_")
+                        this_source_name = this_source_name_split[0]
+
+                        # this accounts for underscores used in the original trans id's
+                        this_source_name_split.pop(0)
+                        this_source_trans_id = "_".join(this_source_name_split)
+
+                        for this_source_cds_flag in source_cds_flag_list:
+                            if this_source_cds_flag == this_source_name:
+                                merged_obj.start_cds = merged_trans_obj.cds_start
+                                merged_obj.end_cds = merged_trans_obj.cds_end
 
 
                 # write out to bed file
@@ -3548,10 +3596,11 @@ scaff_list.sort()
 
 # if source id flag used, check that source given is in filelist
 if source_id_flag != "no_source_id":
-    if source_id_flag not in source_dict:
-        print("Error: Source name given in -n parameter is not found in filelist file.")
-        print("Terminating early.")
-        sys.exit()
+    for this_source_id_flag in source_id_flag_list:
+        if this_source_id_flag not in source_dict:
+            print("Error: Source name given in -n parameter is not found in filelist file.")
+            print("Terminating early.")
+            sys.exit()
 
 #####################################################
 colour_source_list = list(source_dict.keys())
