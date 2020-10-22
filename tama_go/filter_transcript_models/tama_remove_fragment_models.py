@@ -25,6 +25,8 @@ ap.add_argument('-o', type=str, nargs=1, help='Output file prefix')
 ap.add_argument('-m', type=str, nargs=1, help='Exon ends threshold/ splice junction threshold (Default is 10)')
 ap.add_argument('-e', type=str, nargs=1, help='Trans ends wobble threshold (Default is 500)')
 ap.add_argument('-s', type=str, nargs=1, help='Single exon overlap percent threshold (Default is 20 percent)')
+ap.add_argument('-id', type=str, nargs=1, help='Use original ID line original_id (Default is tama_id line based on gene_id;transcript_id structure')
+ap.add_argument('-cds', type=str, nargs=1, help='Pull CDS option. Default is tama_cds where CDS regions matching TSS and TTS are ignored if another CDS is found. Use longest_cds to pick the longest CDS')
 
 
 opts = ap.parse_args()
@@ -57,6 +59,26 @@ if not opts.s:
     overlap_percent_threshold = 20
 else:
     overlap_percent_threshold = int(opts.s[0])
+
+if not opts.id:
+    print("Single exon overlap percent threshold (Default is 20 percent)")
+    id_use_flag = "tama_id"
+else:
+    id_use_flag = opts.id[0]
+
+    if id_use_flag != "tama_id" and id_use_flag != "original_id":
+        print("Error with ID input. Please use either tama_id or original_id")
+        sys.exit()
+
+if not opts.cds:
+    print("Default is tama cds (ignore CDS predictions from TAMA Collapse)")
+    cds_flag = "tama_cds"
+else:
+    cds_flag = opts.cds[0]
+
+    if cds_flag != "tama_cds" and cds_flag != "longest_cds":
+        print("Error with CDS input. Please use either tama_cds or longest_cds")
+        sys.exit()
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
@@ -173,14 +195,18 @@ class Transcript:
 
 
         #gene_id = self.trans_id.split(".")[0]
-        id_line = ";".join([self.gene_id,self.trans_id])
+
+        if id_use_flag == "tama_id":
+            id_line = ";".join([self.gene_id,self.trans_id])
+        elif id_use_flag == "original_id":
+            id_line = self.id_line
 
         bed_list.append(str(id_line))
         bed_list.append("40")
         bed_list.append(self.strand)
 
-        bed_list.append(str(self.trans_start))
-        bed_list.append(str(self.trans_end))
+        bed_list.append(str(self.cds_start))
+        bed_list.append(str(self.cds_end))
 
         bed_list.append("255,0,0")
 
@@ -234,6 +260,55 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
 
     a_trans_length = a_trans_end - a_trans_start
     b_trans_length = b_trans_end - b_trans_start
+
+    a_cds_start = a_trans_obj.cds_start   #################################################################################AAAAAAAAAAAAA
+    b_cds_start = b_trans_obj.cds_start
+
+    a_cds_end = a_trans_obj.cds_end  #################################################################################AAAAAAAAAAAAA
+    b_cds_end = b_trans_obj.cds_end
+
+    final_cds_start = 0
+    final_cds_end = 0
+
+    if cds_flag == "tama_cds":
+        # pick best CDS
+        # Choose longest if both have CDS info
+        if a_cds_start == a_trans_start and a_cds_end == a_trans_end:
+            if b_cds_start == b_trans_start and b_cds_end == b_trans_end:
+                final_cds_start = 0
+                final_cds_end = 0
+            elif b_cds_start != b_trans_start or b_cds_end != b_trans_end:
+                final_cds_start = b_cds_start
+                final_cds_end = b_cds_end
+
+        elif b_cds_start == b_trans_start and b_cds_end == b_trans_end:
+            final_cds_start = a_cds_start
+            final_cds_end = a_cds_end
+
+        elif b_cds_start != b_trans_start or b_cds_end != b_trans_end:
+            a_cds_length = a_cds_end - a_cds_start
+            b_cds_length = b_cds_end - b_cds_start
+
+            if a_cds_length >= b_cds_length:
+                final_cds_start = a_cds_start
+                final_cds_end = a_cds_end
+            else:
+                final_cds_start = b_cds_start
+                final_cds_end = b_cds_end
+
+    elif cds_flag == "longest_cds":
+        a_cds_length = a_cds_end - a_cds_start
+        b_cds_length = b_cds_end - b_cds_start
+
+        if a_cds_length >= b_cds_length:
+            final_cds_start = a_cds_start
+            final_cds_end = a_cds_end
+        else:
+            final_cds_start = b_cds_start
+            final_cds_end = b_cds_end
+
+
+
 
     #####
 
@@ -671,6 +746,10 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
         absorb_match_flag = no_match_flag
     else:
         absorb_match_flag = "trans_match"
+
+        long_trans_obj.cds_start = final_cds_start
+        long_trans_obj.cds_end = final_cds_end
+
 
     return absorb_match_flag,long_trans_id, short_trans_id, long_trans_obj
 
