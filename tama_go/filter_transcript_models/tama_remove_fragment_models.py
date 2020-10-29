@@ -189,6 +189,11 @@ class Transcript:
     def format_bed_line(self):
         bed_list = []
         bed_list.append(str(self.scaffold))
+
+        # correct for shifts in trans start due to 5' longer fragment model
+        if self.exon_start_list[0] < self.trans_start:
+            self.trans_start = self.exon_start_list[0]
+
         bed_list.append(str(self.trans_start))
         bed_list.append(str(self.trans_end))
 
