@@ -11,5 +11,5 @@ If you have any questions on how to run TAMA please post them in the Github issu
 In case I am not responsive on the issues page you can email me directly at (sometimes I don't get the notifications): 
 GenomeRIK at gmail dot com
 
-To cite TAMA please use our current pre-print on BioRxiv:
-https://www.biorxiv.org/content/10.1101/780015v1
+To cite TAMA please use our paper in BMC Genomics:
+https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-020-07123-7
