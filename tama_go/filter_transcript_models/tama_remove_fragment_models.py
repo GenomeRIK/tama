@@ -451,8 +451,9 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
 
                             no_match_flag = "trans_match"
 
-                            if start_wobble < 0:
-                                long_trans_obj.exon_start_list[0] = short_trans_start
+                            if start_wobble > 0:
+                                long_trans_obj.exon_start_list[0] = short_trans_start #use the earliest start
+                                long_trans_obj.trans_start = short_trans_start
 
                 elif exon_index == long_num_exons-1:
                     start_wobble_threshold = wobble_threshold
@@ -464,7 +465,8 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
                             no_match_flag = "trans_match"
 
                             if end_wobble > 0:
-                                long_trans_obj.exon_end_list[-1] = short_trans_end
+                                long_trans_obj.exon_end_list[-1] = short_trans_end # use the latest end
+                                long_trans_obj.trans_end = short_trans_end ###############################################################################################
                 else:
                     start_wobble_threshold = wobble_threshold
                     end_wobble_theshold = wobble_threshold
