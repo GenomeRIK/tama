@@ -12,6 +12,8 @@ Transcriptome Annotation by Modular Algorithms (TAMA)
 
 Author: Richard I. Kuo
 
+Last changed: 2020/11/27
+
 """
 
 
@@ -194,6 +196,10 @@ class Transcript:
         if self.exon_start_list[0] < self.trans_start:
             self.trans_start = self.exon_start_list[0]
 
+        # correct for shifts in trans end due to 3' longer fragment model
+        if self.exon_end_list[-1] > self.trans_end:
+            self.trans_end = self.exon_end_list[-1]
+
         bed_list.append(str(self.trans_start))
         bed_list.append(str(self.trans_end))
 
@@ -210,8 +216,16 @@ class Transcript:
         bed_list.append("40")
         bed_list.append(self.strand)
 
-        bed_list.append(str(self.cds_start))
-        bed_list.append(str(self.cds_end))
+        if cds_flag == "tama_cds":
+            bed_list.append(str(self.trans_start))
+            bed_list.append(str(self.trans_end))
+        elif cds_flag == "longest_cds":
+            bed_list.append(str(self.cds_start))
+            bed_list.append(str(self.cds_end))
+        else:
+            print("Error with cds flag")
+            print(cds_flag)
+            sys.exit()
 
         bed_list.append("255,0,0")
 
@@ -279,7 +293,7 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
         # pick best CDS
         # Choose longest if both have CDS info
         if a_cds_start == a_trans_start and a_cds_end == a_trans_end:
-            if b_cds_start == b_trans_start and b_cds_end == b_trans_end:
+            if b_cds_start == b_trans_start and b_cds_end == b_trans_end: #both seem to be just the TSS and TTS
                 final_cds_start = 0
                 final_cds_end = 0
             elif b_cds_start != b_trans_start or b_cds_end != b_trans_end:
@@ -754,8 +768,12 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
     else:
         absorb_match_flag = "trans_match"
 
-        long_trans_obj.cds_start = final_cds_start
-        long_trans_obj.cds_end = final_cds_end
+        if final_cds_start == 0 and final_cds_end == 0: # if both seem to have TSS and TTS for CDS then just use new TSS and TTS
+            long_trans_obj.cds_start = long_trans_obj.trans_start
+            long_trans_obj.cds_end = long_trans_obj.trans_end
+        else:
+            long_trans_obj.cds_start = final_cds_start
+            long_trans_obj.cds_end = final_cds_end
 
 
     return absorb_match_flag,long_trans_id, short_trans_id, long_trans_obj
