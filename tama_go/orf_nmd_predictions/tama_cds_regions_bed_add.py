@@ -8,6 +8,7 @@ import argparse
 #
 # This script uses data from the blastp parse file and the pacbio annotation to assign the locations of the UTR/CDS regions to the bed file
 # Use sequence file to double check the sequence lengths
+# Last updated 2020/12/11
 #
 
 
@@ -18,6 +19,7 @@ ap.add_argument('-a', type=str, nargs=1, help='Annotation bed file (required)')
 ap.add_argument('-f', type=str, nargs=1, help='Fasta for annotation file (required)')
 ap.add_argument('-o', type=str, nargs=1, help='Output file name (required)')
 ap.add_argument('-s', type=str, nargs=1, help='Include stop codon in CDS region (include_stop), default is to remove stop codon from CDS region')
+ap.add_argument('-d', type=str, nargs=1, help='Distance from last splice junction to call NMD (default 50bp)')
 
 opts = ap.parse_args()
 
@@ -39,6 +41,13 @@ if not opts.o:
 
 if missing_arg_flag == 1:
     print("Please try again with complete arguments")
+
+
+if not opts.d:
+    print("Using default SJ distance of 50bp")
+    sj_dist_threshold = 50
+else:
+    sj_dist_threshold = int(opts.d[0])
 
 parse_file = opts.p[0]
 pbri_file = opts.a[0]
@@ -193,10 +202,22 @@ for line in pbri_file_contents:
     block_sum = 0
     exon_cds_start = 0
     exon_cds_end = 0
+
+    exon_start_list = []
+    exon_end_list = []
     
     for i, block_size in enumerate(block_list):
         prev_block_sum = block_sum
         block_sum = block_sum + int(block_size)
+
+
+        exon_start = trans_start + int(block_start_list[i])
+        exon_start_list.append(exon_start)
+
+        exon_end = exon_start + int(block_size)
+        exon_end_list.append(exon_end)
+
+
         if cds_rel_start >= prev_block_sum and cds_rel_start < block_sum:
             exon_cds_start = i
             cds_coord_start = trans_start + int(block_start_list[i]) + cds_rel_start - prev_block_sum
@@ -221,13 +242,22 @@ for line in pbri_file_contents:
     # NMD candidates, stop codon not on last exon
     if strand == "+":
         if exon_nums > exon_cds_end + 1:
-            nmd_flag = str( exon_nums - (exon_cds_end + 1))
-            nmd_flag = "NMD" + nmd_flag
+
+            stop_dist_sj = exon_start_list[-1] - cds_coord_end
+
+            if stop_dist_sj > sj_dist_threshold:
+                nmd_flag = str( exon_nums - (exon_cds_end + 1))
+                nmd_flag = "NMD" + nmd_flag
+
     elif strand == "-":
         if exon_cds_start > 0:
-            nmd_flag = str(exon_cds_start)
-            nmd_flag = "NMD" + nmd_flag
-    
+
+            stop_dist_sj = cds_coord_start - exon_end_list[0]
+
+            if stop_dist_sj > sj_dist_threshold:
+                nmd_flag = str(exon_cds_start)
+                nmd_flag = "NMD" + nmd_flag
+
     line_split[6] = str(cds_coord_start)
     line_split[7] = str(cds_coord_end)
     

@@ -23,7 +23,7 @@ This script collapses transcripts and groups transcripts into genes for long rea
 """
 
 tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2020_07_18'
+tc_date = 'tc_version_date_2020_12_11'
 
 ### Notes on changes
 # Fixed issue with coordinates of soft clipped variants in the variant output file. 
@@ -51,7 +51,7 @@ ap.add_argument('-lde', type=str, nargs=1, help='Threshold for amount of local d
 ap.add_argument('-ses', type=str, nargs=1, help='Simple error symbol. Use this to pick the symbol used to represent matches in the simple error string for LDE output.')
 
 ap.add_argument('-b', type=str, nargs=1, help='Use BAM instead of SAM')
-ap.add_argument('-log', type=str, nargs=1, help='Turns on/off output of collapsing process. (default on, use log_off to turn off)')
+ap.add_argument('-log', type=str, nargs=1, help='Turns off log output to screen of collapsing process. (default on, use log_off to turn off)')
 ap.add_argument('-v', type=str, nargs=1, help='Prints out version date and exits.')
 
 ap.add_argument('-rm', type=str, nargs=1, help='Run mode allows you to use original or low_mem mode, default is original')
@@ -180,7 +180,7 @@ if not opts.log:
 else:
     log_flag = str(opts.log[0])
     if log_flag != "log_off":
-        print("Please use log_on or log_off")
+        print("Please use log_off to turn off log prints to screen")
         sys.exit()
 
 if not opts.rm:
