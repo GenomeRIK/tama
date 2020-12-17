@@ -19,7 +19,7 @@ Author: Richard I. Kuo
 
 This script merges transcriptome/genome annotations.
 
-Last Updated: 2020/07/21
+Last Updated: 2020/12/17
 
 Added more informative error message for issues with strand information from input bed files. 
 
@@ -3491,7 +3491,23 @@ source_trans_gene_dict = {} # source_trans_gene_dict[source name][trans_id] = ge
 
 for file_line in filelist_file_contents:
     file_line_split = file_line.split("\t")
-    
+
+
+    # check for dos ^M new line character
+    if "\r" in file_line:
+        print("Error with " + filelist_file)
+        print(file_line)
+        print("Please make sure the filelist file does not have DOS new line characters")
+        sys.exit()
+
+    # check for issues with the use of spaces in filelist file
+    space_line_split = file_line.split(" ")
+    if len(space_line_split) > 1:
+        print("Error with " + filelist_file)
+        print(file_line)
+        print("Please make sure it is tab separated with no empty lines and no spaces")
+        sys.exit()
+
     if len(file_line_split) != 4:
         print("Error with " + filelist_file )
         print(file_line)
@@ -3510,7 +3526,8 @@ for file_line in filelist_file_contents:
         source_dict[source_id]['priority_rank'] = priority_rank # by type of merge event 1,1,1 ->  start,junction,end
         
         if seq_type != "capped" and seq_type != "no_cap":
-            print("Incorrect seq types given. Please use capped or  no_cap")
+            print("Incorrect seq types given in filelist file. Please use capped or  no_cap")
+            sys.exit()
 
         source_trans_gene_dict[source_id] = {}
     
