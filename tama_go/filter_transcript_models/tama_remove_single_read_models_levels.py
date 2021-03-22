@@ -224,6 +224,8 @@ for gene_id in gene_list:
     output_flag = "NA"
     
     trans_list = gene_trans_list_dict[gene_id]
+
+    #print(trans_list)
     
     #remove on gene level for single read gene support
     if len(trans_list) == 1:
@@ -286,6 +288,11 @@ for gene_id in gene_list:
 
             total_trans_num_reads = len(list(merge_trans_read_dict[trans_id].keys()))
 
+            #print(total_trans_num_reads)
+            #print(trans_id)
+            #print(list(merge_trans_read_dict[trans_id].keys()))
+            #sys.exit()
+
             if source_support_flag > 1:
                 if num_sources >= source_support_flag:
                     output_flag = "keep"
@@ -316,6 +323,8 @@ for gene_id in gene_list:
 
             if output_flag ==  "keep":
                 keep_trans_dict[trans_id] = 1
+                print("keep "+ trans_id + " " + str(total_trans_num_reads) +" "+ str(read_support_threshold) + " numexons "+ str(num_exons))
+                #sys.exit()
 
             elif output_flag ==  "remove":
                 remove_trans_dict[trans_id] =  1
@@ -354,7 +363,12 @@ for gene_id in gene_list:
 
                 # source_trans_line = ",".join(list(merge_trans_dict[trans_id].keys()))
 
+                total_trans_num_reads = len(list(merge_trans_read_dict[trans_id].keys()))
+                num_exons = trans_exon_dict[trans_id]
+
                 outline = "\t".join([gene_id, trans_id,source_line, str(total_trans_num_reads),new_gene_id, new_trans_id, str(num_exons)])
+                #print(trans_id)
+                #print(total_trans_num_reads)
 
                 new_report_list.append(outline)
                 #outfile_report.write(outline)
@@ -367,6 +381,9 @@ for gene_id in gene_list:
                 source_line = ",".join(list(merge_source_read_dict[trans_id].keys()))
 
                 # source_trans_line = ",".join(list(merge_trans_dict[trans_id].keys()))
+
+                total_trans_num_reads = len(list(merge_trans_read_dict[trans_id].keys()))
+                num_exons = trans_exon_dict[trans_id]
 
                 outline = "\t".join([gene_id, trans_id,source_line, str(total_trans_num_reads),new_gene_id, "removed_transcript",str(num_exons)])
                 #outfile_report.write(outline)
@@ -442,6 +459,9 @@ for gene_id in gene_list:
             this_source_list = list(merge_source_read_dict[trans_id].keys())
 
             total_trans_num_reads = len(list(merge_trans_read_dict[trans_id].keys()))
+
+            #print(total_trans_num_reads)
+            #print(list(merge_trans_read_dict[trans_id].keys()))
 
 
             new_trans_num += 1
