@@ -195,6 +195,7 @@ for line in read_file_contents:
             read_list = this_source_read_line.split(":")[1].split(",")
 
         for read_id in read_list:
+            read_id = "%s/%s" % (this_source_name, read_id)
             merge_trans_read_dict[merge_trans_id][read_id] = 1
             merge_source_read_dict[merge_trans_id][this_source_name][read_id] = 1
 
@@ -366,9 +367,10 @@ for gene_id in gene_list:
 
                 this_read_dict[this_read_id] = 1
 
-                if this_read_id in source_polya_read_dict[this_source_name]:
+                raw_read_id = this_read_id[this_read_id.find("/") + 1:]
+                if raw_read_id in source_polya_read_dict[this_source_name]:
 
-                    polya_percent = float(source_polya_read_dict[this_source_name][this_read_id][3])
+                    polya_percent = float(source_polya_read_dict[this_source_name][raw_read_id][3])
 
                     # print(polya_percent) ##################################
 
@@ -381,7 +383,7 @@ for gene_id in gene_list:
                         if trans_id not in this_trans_read_polya_support_dict:
                             this_trans_read_polya_support_dict[trans_id] = {}
 
-                        this_trans_read_polya_support_dict[trans_id][this_read_id] = source_polya_read_dict[this_source_name][this_read_id]
+                        this_trans_read_polya_support_dict[trans_id][this_read_id] = source_polya_read_dict[this_source_name][raw_read_id]
 
         #if trans_id == "G2.1":
         #    print("Pre checks")
