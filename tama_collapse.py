@@ -6215,7 +6215,7 @@ if run_mode_flag == "original":
 
 
             ########################################################################################2020/12/14
-            if var_pos > len(fasta_dict[scaffold]) or var_pos < 0:
+            if var_pos >= len(fasta_dict[scaffold]) or var_pos < 0:
                 print("Read mapping off scaffold")
                 print(scaffold +" : "+ str(var_pos))
                 print(var_cov_trans_id_list)
