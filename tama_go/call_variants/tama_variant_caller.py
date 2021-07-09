@@ -13,7 +13,7 @@ import argparse
 
 """
 Transcriptome Annotation by Modular Algorithms (TAMA)
-TAMA Collapse
+TAMA Variant Caller
 
 Author: Richard I. Kuo
 
@@ -236,21 +236,7 @@ if input_sambam_flag == "na":
 start_time = time.time()
 prev_time = start_time
 
-#print("opening sam file")
-#sam_file = sys.argv[1]
-#sam_file_contents = open(sam_file).read().rstrip("\n").split("\n")
 
-#print("opening fasta file")
-#fasta_file_name = sys.argv[2]
-
-#outfile_prefix = sys.argv[3]
-
-#fiveprime_cap_flag = "capped"
-#collapse_flag = "common_ends"
-
-#default threshold, will add option to change via arguments
-#coverage_threshold = 99.0
-#identity_threshold = 85.0
 
 #default poly A threshold
 a_window = 20
@@ -281,12 +267,6 @@ if run_mode_flag == "original":
     varcov_file_line = "\t".join(["positions","overlap_clusters"])
     outfile_varcov.write(varcov_file_line)
     outfile_varcov.write("\n")
-
-polya_outfile_name = outfile_prefix + "_polya.txt"
-outfile_polya = open(polya_outfile_name,"w")
-polya_file_line = "\t".join(["cluster_id","trans_id","strand","a_percent","a_count","sequence"])
-outfile_polya.write(polya_file_line)
-outfile_polya.write("\n")
 
 
 
@@ -5200,6 +5180,29 @@ if run_mode_flag == "original":
             downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
             trans_obj.add_polya_info(downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent)
 
+        # check for multi maps
+        if read_id in trans_obj_dict:
+            print("Read has multi map")
+            print(line)
+            print(percent_coverage)
+            print(percent_identity)
+
+            trans_obj_a = trans_obj_dict[read_id]
+            trans_obj_b = trans_obj
+
+            best_trans_obj, best_map_id = compare_multimaps(trans_obj_a, trans_obj_b)
+
+            # only re-assign if the new map is better, otherwise old map is aready processed
+            if best_map_id == "B":
+                trans_obj_dict[read_id] = best_trans_obj
+                multimap_flag = 1
+            else:
+                # if this new map is not going to be used we can skip the rest of the loop
+                continue
+
+        else:
+            trans_obj_dict[read_id] = trans_obj
+
 
 
 
@@ -5770,4 +5773,4 @@ if run_mode_flag == "original":
         print("Missing group num, check for multi-maps in SAM file")
         print("This should only occur if you have a multi-map site that no reads are preferring.")
 
-print("TAMA Collapse has successfully finished running!")
+print("TAMA Variant Caller has successfully finished running!")
