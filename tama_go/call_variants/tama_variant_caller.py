@@ -5576,67 +5576,9 @@ def process_loci(this_trans_obj_dict,trans_list,this_gene_count):
 
             sorted_merge_obj_list = sort_transcripts(merge_obj_list)
 
-            trans_count = 0
-            for merged_obj in sorted_merge_obj_list:
-                trans_count += 1
-                final_trans_id = "G" + str(this_gene_count) + "." + str(trans_count)
-                merged_obj.trans_id = final_trans_id
-                print(final_trans_id)
-
-                merged_obj_dict[final_trans_id] = merged_obj
-
-                #write out to bed file
-                bed_line = merged_obj.format_bed_line()
-                outfile_bed.write(bed_line)
-                outfile_bed.write("\n")
-
-                #write out to transcript report file
-                trans_report_line = merged_obj.format_trans_report_line()
-                outfile_trans_report.write(trans_report_line)
-                outfile_trans_report.write("\n")
-
-                #write out to rt switch file
-                num_junct_bind,bind_seq_dict = detect_rt_switch(merged_obj)
-                if num_junct_bind > 0 :
-                    for junct_num in bind_seq_dict:
-                        first_seq = "".join(bind_seq_dict[junct_num][1])
-                        second_seq = "".join(bind_seq_dict[junct_num][2])
-                        rec_comp_seq = "".join(bind_seq_dict[junct_num][3])
-
-                        rtswitch_line = "\t".join([final_trans_id,str(junct_num),first_seq,second_seq,rec_comp_seq])
-
-                        #outfile_rtswitch.write(rtswitch_line)
-                        #outfile_rtswitch.write("\n")
-
-                #write out to transcript cluster report file
-                for merged_trans_id in merged_obj.merged_trans_dict:
-                    merged_trans_obj = merged_obj.merged_trans_dict[merged_trans_id]
-                    cluster_id = merged_trans_obj.cluster_id
-                    scaff_name = merged_trans_obj.scaff_name
-                    strand = merged_trans_obj.strand
-                    start_pos = merged_trans_obj.start_pos
-                    end_pos = merged_trans_obj.end_pos
-
-                    exon_start_line,exon_end_line = merged_trans_obj.make_exon_start_end_lines()
-
-                    merge_trans_bed_line = merged_trans_obj.format_bed_line(final_trans_id)
-
-                    #trans_clust_line = "\t".join(trans_clust_list)
-                    outfile_trans_clust_report.write(merge_trans_bed_line)
-                    outfile_trans_clust_report.write("\n")
-
-                    #write out to polya file
-                    downstream_seq = "".join(merged_trans_obj.downstream_seq)
-                    dseq_length = merged_trans_obj.dseq_length
-                    a_count = merged_trans_obj.a_count
-                    a_percent = merged_trans_obj.a_percent * 100
 
 
-                    if a_percent > a_perc_thresh:
-                        a_percent_string =str(round(a_percent,2))
-                        polya_file_line = "\t".join([cluster_id,final_trans_id,strand,a_percent_string,str(a_count),downstream_seq])
-                        outfile_polya.write(polya_file_line)
-                        outfile_polya.write("\n")
+
 
 
     #del this_trans_obj_dict
