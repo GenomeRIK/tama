@@ -9,7 +9,6 @@ from Bio import AlignIO
 import os
 import argparse
 
-from __init__ import __version__
 
 
 """
