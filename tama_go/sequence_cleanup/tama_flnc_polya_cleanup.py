@@ -8,6 +8,7 @@ import argparse
 #
 # This script removes tailing poly A from FLNC fasta files
 # This is necessary for FLNC generated from Teloprime libraries
+# Updated 2022/03/31
 #
 
 
@@ -16,6 +17,7 @@ ap = argparse.ArgumentParser(description='This script removes tailing poly A fro
 
 ap.add_argument('-f', type=str, nargs=1, help='FLNC Fasta file')
 ap.add_argument('-p', type=str, nargs=1, help='Output prefix')
+ap.add_argument('-m', type=str, nargs=1, help='Minimum read length to keep (default is 200)')
 
 
 opts = ap.parse_args()
@@ -35,6 +37,12 @@ if missing_arg_flag == 1:
     print("Please try again with complete arguments")
 
 
+if not opts.m:
+    print("Minimum read length to keep (default is 200)")
+    min_length = int(m)
+else:
+    min_length = 200
+
 fasta_file = opts.f[0]
 
 outfile_prefix = opts.p[0]
@@ -48,6 +56,12 @@ outfile_tails = open(outfile_name,"w")
 
 outfile_report_name = outfile_prefix + "_polya_flnc_report.txt"
 outfile_report = open(outfile_report_name,"w")
+
+outfile_filtered_name = outfile_prefix + "_discarded_reads.txt"
+outfile_filtered = open(outfile_filtered_name,"w")
+
+outfile_summary_name = outfile_prefix + "_summary.txt"
+outfile_summary = open(outfile_summary_name,"w")
 
 polya_dict = {} # polya_dict[polya number] = count
 
@@ -65,6 +79,21 @@ class Block:
         self.block_end = block_end
 
 
+total_read_count = 0
+pass_read_count = 0
+discarded_read_count = 0
+polya_zero_read_count = 0
+polya_poly_five_read_count = 0
+polya_poly_sixmore_read_count = 0
+longest_trimmed_read_length = 0
+longest_trimmed_read_id = ""
+peak_read_length = 0
+longest_polya_length = 0
+
+read_length_dict = {} # read_length_dict[length bin] = counts
+
+length_bin_size = 200
+
 print("going through fasta")
 for seq_record in SeqIO.parse(fasta_file, "fasta"):
     ##  seq_name = str(seq_record.id)
@@ -74,7 +103,8 @@ for seq_record in SeqIO.parse(fasta_file, "fasta"):
     
     
     seq_string_list = list(seq_string)
-    
+
+    total_read_count += 1
     
     #########################################
     a_block_dict = {} # a_block_dict[block index] = block_obj
@@ -145,10 +175,19 @@ for seq_record in SeqIO.parse(fasta_file, "fasta"):
     this_a_percent = 1.0
     
     simple_a_tail_index = 0
+
+    block_overrun_flag = 0
     
     while stop_checking_flag == 0:
         
         this_block_index += 1
+
+        # check if we have run out blocks
+        # this happens when the reads are too short
+        if this_block_index not in a_block_dict:
+            stop_checking_flag = 1
+            block_overrun_flag = 1
+            continue
         
         this_block_obj = a_block_dict[this_block_index]
         
@@ -263,19 +302,68 @@ for seq_record in SeqIO.parse(fasta_file, "fasta"):
         polya_dict[polya_count] = 0
     
     polya_dict[polya_count] += 1
-    
-
-    outline = ">" + seq_name
 
 
-    outfile.write(outline)
-    outfile.write("\n")
-    
-    outline = trim_seq_string
 
-    outfile.write(outline)
-    outfile.write("\n")
-    
+    if len(trim_seq_list) <  min_length:
+
+        outline = ">" + seq_name + "\t" + "short"  + "\t" + "trimlen:"+ str(len(trim_seq_list)) + "\t" + "prelen:"+ str(len(seq_string_list))
+        outfile_filtered.write(outline)
+        outfile_filtered.write("\n")
+
+        outline = seq_string
+        outfile_filtered.write(outline)
+        outfile_filtered.write("\n")
+
+        discarded_read_count += 1
+
+    elif block_overrun_flag == 1:
+
+        outline = ">" + seq_name + "\t" + "overrun"  + "\t" + "trimlen:"+ str(len(trim_seq_list)) + "\t" + "prelen:"+ str(len(seq_string_list))
+        outfile_filtered.write(outline)
+        outfile_filtered.write("\n")
+
+        outline = seq_string
+        outfile_filtered.write(outline)
+        outfile_filtered.write("\n")
+
+        discarded_read_count += 1
+
+
+    else:
+
+        outline = ">" + seq_name
+
+
+        outfile.write(outline)
+        outfile.write("\n")
+
+        outline = trim_seq_string
+
+        outfile.write(outline)
+        outfile.write("\n")
+
+        pass_read_count += 1
+
+        this_trimmed_read_length = len(trim_seq_string)
+
+        if this_trimmed_read_length > longest_trimmed_read_length:
+            longest_trimmed_read_length = this_trimmed_read_length
+            longest_trimmed_read_id = seq_name
+
+        bin_num = this_trimmed_read_length // length_bin_size
+
+        bin_length = bin_num * length_bin_size
+
+        if bin_length not in  read_length_dict:
+            read_length_dict[bin_length] = 0
+
+        read_length_dict[bin_length] += 1
+
+
+
+
+
     outline = ">tail_" + seq_name
     
     outfile_tails.write(outline)
@@ -305,16 +393,88 @@ for polya_num in polya_num_list:
     outfile_report.write(outline)
     outfile_report.write("\n")
 
+    if polya_num == 0 :
+
+        polya_zero_read_count = polya_num_count
+
+    elif polya_num > 0 and polya_num < 6 :
+        polya_poly_five_read_count = polya_poly_five_read_count + polya_num_count
+
+    elif polya_num > 6 :
+        polya_poly_sixmore_read_count = polya_poly_sixmore_read_count + polya_num_count
+
+
+    if polya_num > longest_polya_length:
+        longest_polya_length = polya_num
 
 
 
+read_length_bin_list = list(read_length_dict.keys())
+
+
+max_bin_count = 0
+max_bin_length = 0
+
+for bin_length in read_length_bin_list:
+
+    bin_count = read_length_dict[bin_length]
+
+    if bin_count > max_bin_count:
+        max_bin_count = bin_count
+        max_bin_length = bin_length
 
 
 
+peak_read_length = max_bin_length
+peak_read_count = max_bin_count
 
 
+# write out summary report
 
 
+outline = "total_read_count:" + "\t" + str(total_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "pass_read_count:" + "\t" + str(pass_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "discarded_read_count:" + "\t" + str(discarded_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "polya_zero_read_count:" + "\t" + str(polya_zero_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "polya_upto_five_read_count:" + "\t" + str(polya_poly_five_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "polya_sixormore_read_count:" + "\t" + str(polya_poly_sixmore_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
 
 
+outline = "longest_trimmed_read_length:" + "\t" + str(longest_trimmed_read_length) + "\t" + "longest_trimmed_read_id:" + "\t" + str(longest_trimmed_read_id)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "peak_read_length:" + "\t" + str(peak_read_length) + "\t" + "peak_read_count:" + "\t" + str(peak_read_count)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
+
+outline = "longest_polya_length:" + "\t" + str(longest_polya_length)
+
+outfile_summary.write(outline)
+outfile_summary.write("\n")
 
