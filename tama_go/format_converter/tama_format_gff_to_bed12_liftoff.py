@@ -60,6 +60,9 @@ class Transcript:
         self.gene_id = "NA"
         self.trans_id = "NA"
         self.trans_name = "NA"
+        self.trans_type = "NA"
+
+        self.trans_type = region_type
         
         for subfield in anno_split:
             subfield_split = subfield.split("=")
@@ -137,7 +140,7 @@ class Transcript:
 
         self.c_start_list.sort()
         self.c_end_list.sort()
-        
+
     def add_start(self,start_line):
         start_obj = StartCodon(start_line)
         
@@ -231,7 +234,7 @@ class Cds:
 
         
         #self.c_start = int(line_split[3]) - 1
-        self.c_start = int(line_split[3])
+        self.c_start = int(line_split[3]) - 1 # adjust from gff 1 base to bed 0 base
         self.c_end = int(line_split[4])
         self.strand = line_split[6]
         
@@ -302,7 +305,7 @@ class Utr:
 
         
         #self.u_start = int(line_split[3]) - 1
-        self.u_start = int(line_split[3])
+        self.u_start = int(line_split[3]) - 1 # adjust from gff 1 base to bed 0 base
         self.u_end = int(line_split[4])
         self.strand = line_split[6]
 
@@ -499,16 +502,21 @@ for trans_id in trans_list:
     gene_id = trans_dict[trans_id].gene_id
     trans_id = trans_dict[trans_id].trans_id
     trans_name = trans_dict[trans_id].trans_name
+    trans_type = trans_dict[trans_id].trans_type
     #gene_class = trans_dict[trans_id].gene_class
     #trans_class = trans_dict[trans_id].trans_class
     #id_line = ";".join([gene_id,trans_id,gene_class,trans_class])
-    id_line = ";".join([gene_id, trans_id,trans_name])
+    id_line = ";".join([gene_id, trans_id,trans_name,trans_type])
     strand = trans_dict[trans_id].strand
     blocks_line = ",".join(e_block_sizes)
     starts_line = ",".join(rel_starts)
 
-    cds_start = str(trans_dict[trans_id].c_start_list[0])
-    cds_end = str(trans_dict[trans_id].c_end_list[-1])
+    if len(trans_dict[trans_id].c_start_list) > 0 :
+        cds_start = str(trans_dict[trans_id].c_start_list[0])
+        cds_end = str(trans_dict[trans_id].c_end_list[-1])
+    else:
+        cds_start = "0"
+        cds_end = "0"
 
     ##################
     # blocked out lines used to go here but I moved them to the end for ease of reading
