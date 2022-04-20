@@ -130,6 +130,10 @@ for line in gtf_file_contents:
     region_type = line_split[2]
     
     id_split = id_line.split(";")
+
+    gene_id = "richardkuo"
+    trans_id = "richardkuo"
+
     
     for id_field in id_split:
         if id_field == "":
@@ -141,20 +145,31 @@ for line in gtf_file_contents:
         
         if "gene_id" in id_field:
             gene_id = id_code
-            if gene_id not in gene_dict:
-                
-                gene_dict[gene_id] = []
-                
-                gene_list.append(gene_id)
-                gene_trans_dict[gene_id] = {}
-                
                 
         elif "transcript_id" in id_field:
             trans_id = id_code
-            if trans_id not in gene_dict[gene_id]:
-                gene_dict[gene_id].append(trans_id)
-                
-                gene_trans_dict[gene_id][trans_id] = Transcript(trans_id,gene_id,chrom,strand)
+
+
+    if gene_id == "richardkuo":
+        print("Error with missing gene ID")
+        print(line)
+        sys.exit()
+
+    if trans_id == "richardkuo":
+        print("Error with missing tranascript ID")
+        print(line)
+        sys.exit()
+
+    if gene_id not in gene_dict:
+        gene_dict[gene_id] = []
+
+        gene_list.append(gene_id)
+        gene_trans_dict[gene_id] = {}
+
+    if trans_id not in gene_dict[gene_id]:
+        gene_dict[gene_id].append(trans_id)
+
+        gene_trans_dict[gene_id][trans_id] = Transcript(trans_id, gene_id, chrom, strand)
 
 
     if region_type == "exon":
