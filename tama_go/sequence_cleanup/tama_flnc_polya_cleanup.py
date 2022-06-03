@@ -8,7 +8,7 @@ import argparse
 #
 # This script removes tailing poly A from FLNC fasta files
 # This is necessary for FLNC generated from Teloprime libraries
-# Updated 2022/03/31
+# Updated 2022/06/03
 #
 
 
@@ -39,7 +39,7 @@ if missing_arg_flag == 1:
 
 if not opts.m:
     print("Minimum read length to keep (default is 200)")
-    min_length = int(m)
+    min_length = int(opts.m)
 else:
     min_length = 200
 
