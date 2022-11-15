@@ -7,7 +7,7 @@ import argparse
 
 #
 # This script parses information from the default output of blastp
-# 
+# Last updated on 2022/11/15 by RK
 #
 
 
@@ -122,11 +122,15 @@ trans_id_dict = {}
 
 query_id_line_flag = 0
 
+blastp_line_count = 0
+
 print("opening blastp file")
 with open(blastp_file) as blastp_file_contents:
     for line in blastp_file_contents:
 
         line = line.rstrip("\n")
+
+        blastp_line_count += 1
 
         # check that we are not in the middle of getting the subject name
         if s_name_flag == 1:
@@ -378,6 +382,13 @@ with open(blastp_file) as blastp_file_contents:
                 s_end = line.split()[3]
                 align_start_flag = 0
             elif align_start_flag == 0:
+
+                ## sanity check for file formatting
+                if len(line.split()) < 4:
+                    print("Error with formatting of Sbjct line")
+                    print(line)
+                    print("Error on line: " + str(blastp_line_count))
+                    
                 s_end = line.split()[3]
             continue
 
