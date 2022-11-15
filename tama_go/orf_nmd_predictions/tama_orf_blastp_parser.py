@@ -385,11 +385,14 @@ with open(blastp_file) as blastp_file_contents:
 
                 ## sanity check for file formatting
                 if len(line.split()) < 4:
-                    print("Error with formatting of Sbjct line")
+                    print("Strange formatting of Sbjct line")
                     print(line)
-                    print("Error on line: " + str(blastp_line_count))
+                    print("Oddity on line: " + str(blastp_line_count))
+
+                else:
                     
-                s_end = line.split()[3]
+                    s_end = line.split()[3]
+
             continue
 
         if line == "***** No hits found *****":
