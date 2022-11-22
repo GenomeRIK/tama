@@ -109,7 +109,7 @@ class Transcript:
         if block_start_list[-1] == "":
             block_start_list.pop(-1)
 
-        for i in xrange(len(block_size_list)):
+        for i in range(len(block_size_list)):
             rel_exon_start = int(block_start_list[i])
             rel_exon_end = rel_exon_start + int(block_size_list[i])
 

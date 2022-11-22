@@ -222,7 +222,7 @@ def id_parser(id_line):
 
         delim_list = []
 
-        for i in xrange(len(delim_line)):
+        for i in range(len(delim_line)):
             delim_list.append(delim_line[i])
 
         delim_string = "|".join(delim_list)

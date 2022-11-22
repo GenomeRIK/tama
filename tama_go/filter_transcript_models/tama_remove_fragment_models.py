@@ -162,7 +162,7 @@ class Transcript:
         if block_start_list[-1] == "":
             block_start_list.pop(-1)
 
-        for i in xrange(len(block_size_list)):
+        for i in range(len(block_size_list)):
             rel_exon_start = int(block_start_list[i])
             rel_exon_end = rel_exon_start + int(block_size_list[i])
 
@@ -178,7 +178,7 @@ class Transcript:
         exon_start_string_list = []
         exon_end_string_list = []
 
-        for i in xrange(len(self.exon_start_list)):
+        for i in range(len(self.exon_start_list)):
 
             exon_start_string_list.append(str(self.exon_start_list[i]))
             exon_end_string_list.append(str(self.exon_end_list[i]))
@@ -233,7 +233,7 @@ class Transcript:
 
         relative_exon_start_list = []
         exon_length_list = []
-        for i in xrange(self.num_exons):
+        for i in range(self.num_exons):
             exon_start = self.exon_start_list[i]
             exon_end = self.exon_end_list[i]
             exon_length = exon_end - exon_start
@@ -446,7 +446,7 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
     elif short_num_exons == 1:
 
 
-        for exon_index in xrange(long_num_exons):
+        for exon_index in range(long_num_exons):
             this_exon_start = long_exon_start_list[exon_index]
             this_exon_end = long_exon_end_list[exon_index]
 
@@ -494,8 +494,8 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
             no_match_flag = "no_match"
 
     elif long_num_exons > 1 and short_num_exons > 1: # if both are multi exon models! ########################################
-        for i in xrange(long_num_exons):
-            for j in xrange(short_num_exons):
+        for i in range(long_num_exons):
+            for j in range(short_num_exons):
 
 
                 long_this_exon_start = long_exon_start_list[i]
@@ -659,7 +659,7 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
             # for long
             prev_index_start = -1
             prev_index_end = -1
-            for i in xrange(len(long_index_start_list)):
+            for i in range(len(long_index_start_list)):
                 long_index_start = long_index_start_list[i]
                 long_index_end = long_index_end_list[i]
 
@@ -680,7 +680,7 @@ def compare_absorb_transcripts(a_trans_obj, b_trans_obj):
             # for short
             prev_index_start = -1
             prev_index_end = -1
-            for i in xrange(len(short_index_start_list)):
+            for i in range(len(short_index_start_list)):
                 short_index_start = short_index_start_list[i]
                 short_index_end = short_index_end_list[i]
 

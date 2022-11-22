@@ -67,16 +67,16 @@ class Transcript:
         self.strand = strand
         t_start_list = [int(t_start)] * int(num_exons)
         start_list = starts.split(",")
-        start_list = filter(None, start_list)
+        start_list = [_f for _f in start_list if _f]
         block_list = blocks.split(",")
-        block_list = filter(None, block_list)
+        block_list = [_f for _f in block_list if _f]
         
         self.bed_starts = starts
         self.bed_blocks = blocks
         
         #coordinate starts and ends
-        self.start_list = map(calc_exon_start,t_start_list,start_list)
-        self.end_list =  map(calc_end,self.start_list,block_list)
+        self.start_list = list(map(calc_exon_start,t_start_list,start_list))
+        self.end_list =  list(map(calc_end,self.start_list,block_list))
         self.num_exons = num_exons
 
 

@@ -117,7 +117,7 @@ for seq_record in SeqIO.parse(fasta_file, "fasta"):
     #print(seq_name)
     
     # use A and non A block method
-    for i in xrange(len(seq_string_list)):
+    for i in range(len(seq_string_list)):
         
         block_end += 1
         this_block_count += 1
