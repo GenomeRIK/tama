@@ -22,8 +22,8 @@ This script collapses transcripts and groups transcripts into genes for long rea
 
 """
 
-tc_version = 'tc0.0'
-tc_date = 'tc_version_date_2020_12_14'
+tc_version = 'tc0.1'
+tc_date = 'tc_version_date_2022_02_22'
 
 ### Notes on changes
 # Fixed issue with coordinates of soft clipped variants in the variant output file. 
@@ -6215,7 +6215,7 @@ if run_mode_flag == "original":
 
 
             ########################################################################################2020/12/14
-            if var_pos > len(fasta_dict[scaffold]) or var_pos < 0:
+            if var_pos >= len(fasta_dict[scaffold]) or var_pos < 0:
                 print("Read mapping off scaffold")
                 print(scaffold +" : "+ str(var_pos))
                 print(var_cov_trans_id_list)
