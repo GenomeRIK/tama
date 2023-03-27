@@ -128,6 +128,15 @@ def id_parser(id_line):
         if filter_level == "only_match":
             if "ENS" not in ens_gene_id:
                 output_flag = "fail"
+        elif filter_level == "none":
+            if ens_gene_id == "":
+                ens_gene_id = tama_gene_id
+            if ens_trans_id == "":
+                ens_trans_id = tama_trans_id
+        else:
+            print("Error with Filter Level input")
+            print("Please use only_match or none")
+
 
 
         new_output_list = []
