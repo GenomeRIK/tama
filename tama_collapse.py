@@ -22,8 +22,8 @@ This script collapses transcripts and groups transcripts into genes for long rea
 
 """
 
-tc_version = 'tc0.1'
-tc_date = 'tc_version_date_2022_02_22'
+tc_version = 'tc0.2'
+tc_date = 'tc_version_date_2023_03_28'
 
 ### Notes on changes
 # Fixed issue with coordinates of soft clipped variants in the variant output file. 
@@ -6364,15 +6364,15 @@ param_list.append("-c " +  str(coverage_threshold))
 param_list.append("-i " + str(identity_threshold))
 param_list.append("-icm " + ident_calc_method)
 
-param_list.append("-a " + fiveprime_threshold)
-param_list.append("-m " + exon_diff_threshold)
-param_list.append("-z " + threeprime_threshold)
+param_list.append("-a " + str(fiveprime_threshold))
+param_list.append("-m " + str(exon_diff_threshold))
+param_list.append("-z " + str(threeprime_threshold))
 
 param_list.append("-d " + duplicate_flag)
 
 param_list.append("-sj " + sj_priority_flag)
-param_list.append("-sjt " + sj_err_threshold)
-param_list.append("-lde " + lde_threshold)
+param_list.append("-sjt " + str(sj_err_threshold))
+param_list.append("-lde " + str(lde_threshold))
 param_list.append("-ses " + ses_match_char)
 
 param_list.append("-b " + bam_flag)
