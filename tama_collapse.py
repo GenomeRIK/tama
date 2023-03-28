@@ -316,6 +316,12 @@ lde_file_line = "\t".join(["cluster_id","lde_flag","scaff_name","start_pos","end
 outfile_lde.write(lde_file_line)
 outfile_lde.write("\n")
 
+
+report_outfile_name = outfile_prefix + "_report.txt"
+outfile_report = open(report_outfile_name,"w")
+
+
+
 variation_dict = {} # variation_dict[scaffold][position][variant type][alt allele][cluster id] = 1
 var_coverage_dict = {} # var_coverage_dict[scaffold][position][trans_id] = 1
 
@@ -499,6 +505,13 @@ nuc_char_dict["N"]["C"] = 1
 nuc_char_dict["N"]["G"] = 1
 #nuc_char_dict["Z"] = {}
 
+
+
+
+report_gene_count = 0
+report_trans_count = 0
+report_accepted_reads = 0
+report_discarded_reads = 0
 
 
 #use this to find mismatch between two aligned sequences
@@ -5165,6 +5178,8 @@ if run_mode_flag == "original":
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
+
+            report_discarded_reads += 1
             continue
 
 
@@ -5203,6 +5218,8 @@ if run_mode_flag == "original":
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
             #skip the transcript because the mapping is poor
+
+            report_discarded_reads += 1
             continue
 
         else:
@@ -5233,12 +5250,16 @@ if run_mode_flag == "original":
                 outfile_cluster.write(cluster_line)
                 outfile_cluster.write("\n")
 
+                report_discarded_reads += 1
+
                 continue
 
             accept_flag = "accepted"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
+
+            report_accepted_reads += 1
 
             #only run poly detetcion on accepted transcripts
             downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
@@ -5541,6 +5562,8 @@ if run_mode_flag == "original":
                     outfile_bed.write(bed_line)
                     outfile_bed.write("\n")
 
+                    report_trans_count += 1
+
                     #write out to transcript report file
                     trans_report_line = merged_obj.format_trans_report_line()
                     outfile_trans_report.write(trans_report_line)
@@ -5598,7 +5621,7 @@ if run_mode_flag == "original":
                             outfile_polya.write(polya_file_line)
                             outfile_polya.write("\n")
 
-
+    report_gene_count = gene_count
     # original mode end ##############################################
     ############################################################################################################
     ############################################################################################################
@@ -5847,6 +5870,8 @@ def process_loci(this_trans_obj_dict,trans_list,this_gene_count):
                 outfile_bed.write(bed_line)
                 outfile_bed.write("\n")
 
+                report_trans_count += 1
+
                 #write out to transcript report file
                 trans_report_line = merged_obj.format_trans_report_line()
                 outfile_trans_report.write(trans_report_line)
@@ -5975,6 +6000,9 @@ if run_mode_flag == "low_mem":
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage,percent_identity,error_line, length, cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
+
+            report_discarded_reads += 1
+
             continue
 
 
@@ -6013,6 +6041,9 @@ if run_mode_flag == "low_mem":
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
             #skip the transcript because the mapping is poor
+
+            report_discarded_reads += 1
+
             continue
 
         else:
@@ -6030,12 +6061,16 @@ if run_mode_flag == "low_mem":
                 outfile_cluster.write(cluster_line)
                 outfile_cluster.write("\n")
 
+                report_discarded_reads += 1
+
                 continue
 
             accept_flag = "accepted"
             cluster_line = "\t".join([read_id,mapped_flag,accept_flag,percent_coverage_str,percent_identity_str,error_line, str(seq_length), cigar])
             outfile_cluster.write(cluster_line)
             outfile_cluster.write("\n")
+
+            report_accepted_reads += 1
 
             #only run poly detection on accepted transcripts
             downstream_seq,dseq_length,a_count,n_count,a_percent,n_percent = detect_polya(trans_obj,a_window)
@@ -6151,8 +6186,12 @@ if run_mode_flag == "low_mem":
     # make sure to handle the last group for the low mem mode
     # this is not an issue with the original mode because you collect groups as you go along.
     # but in low mem mode you only process a group when a new group is found.
-    gene_count = process_loci(trans_obj_dict, group_trans_list, gene_count)  #################################### 2020/07/30
-    #if variation_dict:
+
+    if len(group_trans_list) == 0:
+        print("No reads from loci meet threshold requirements.")
+    else:
+        gene_count = process_loci(trans_obj_dict, group_trans_list, gene_count)  #################################### 2020/07/30
+    #   if variation_dict:
     #    if len(group_trans_list) >= var_support_threshold:
     #        process_variation(this_scaffold, variation_dict, var_coverage_dict,var_support_threshold)
 
@@ -6166,6 +6205,8 @@ if run_mode_flag == "low_mem":
         sam_file_obj.close()
 
     total_group_count = group_count
+
+    report_gene_count = gene_count
     ####################################################################################################
 
     ########################################################################### loop through groups
@@ -6303,3 +6344,61 @@ if run_mode_flag == "original":
         print("This should only occur if you have a multi-map site that no reads are preferring.")
 
 print("TAMA Collapse has successfully finished running!")
+
+
+report_file_line = "TAMA Collapse has run successfully!"
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
+
+
+param_list = []
+
+param_list.append("-s " + sam_file)
+param_list.append("-f " + fasta_file_name)
+param_list.append("-p " + outfile_prefix)
+
+param_list.append("-x " + fiveprime_cap_flag)
+param_list.append("-e " + collapse_flag)
+
+param_list.append("-c " +  str(coverage_threshold))
+param_list.append("-i " + str(identity_threshold))
+param_list.append("-icm " + ident_calc_method)
+
+param_list.append("-a " + fiveprime_threshold)
+param_list.append("-m " + exon_diff_threshold)
+param_list.append("-z " + threeprime_threshold)
+
+param_list.append("-d " + duplicate_flag)
+
+param_list.append("-sj " + sj_priority_flag)
+param_list.append("-sjt " + sj_err_threshold)
+param_list.append("-lde " + lde_threshold)
+param_list.append("-ses " + ses_match_char)
+
+param_list.append("-b " + bam_flag)
+param_list.append("-log " + log_flag)
+param_list.append("-rm " + run_mode_flag)
+param_list.append("-vc " + str(var_support_threshold))
+
+param_string = " ".join(param_list)
+
+
+report_file_line = "Parameters used:\t" + param_string
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
+
+report_file_line = "Total Gene Count:\t" + str(report_gene_count)
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
+
+report_file_line = "Total Transcript Count:\t" + str(report_trans_count)
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
+
+report_file_line = "Total Accepted Reads:\t" + str(report_accepted_reads)
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
+
+report_file_line = "Total Discarded Reads:\t" + str(report_discarded_reads)
+outfile_report.write(report_file_line)
+outfile_report.write("\n")
