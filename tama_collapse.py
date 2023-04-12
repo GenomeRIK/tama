@@ -5730,6 +5730,9 @@ def process_variation(scaffold,variation_dict,var_coverage_dict,var_support_thre
 
 def process_loci(this_trans_obj_dict,trans_list,this_gene_count):
 
+
+    global report_gene_count, report_trans_count, report_accepted_reads, report_discarded_reads
+
     merged_obj_dict = {}  # merged_obj_dict[final trans id] = merged obj
 
 
