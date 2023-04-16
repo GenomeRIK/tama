@@ -145,7 +145,7 @@ for line in read_file_contents:
         if len(this_source_read_line_split) > 2:
 
             new_this_source_read_line_split = []
-            for i in xrange(len(this_source_read_line_split) - 1):
+            for i in range(len(this_source_read_line_split) - 1):
                 new_this_source_read_line_split.append(this_source_read_line_split[i+1])
 
             new_this_source_read_line = ":".join(new_this_source_read_line_split)

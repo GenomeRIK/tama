@@ -191,7 +191,7 @@ for line in filelist_file_contents:
                 if len(this_source_read_line_split) > 2:
 
                     new_this_source_read_line_split = []
-                    for i in xrange(len(this_source_read_line_split) - 1):
+                    for i in range(len(this_source_read_line_split) - 1):
                         new_this_source_read_line_split.append(this_source_read_line_split[i+1])
 
                     new_this_source_read_line = ":".join(new_this_source_read_line_split)
@@ -283,7 +283,7 @@ if merge_file != "no_merge":
                 else:
                     source_trans_id = source_trans_id_line.split("_")[num_underscore_fields - 1]
                     source_name_underscore_list = []
-                    for i in xrange(num_underscore_fields-1):
+                    for i in range(num_underscore_fields-1):
                         source_name_underscore_list.append(source_trans_id_line.split("_")[i])
 
                     source_name = "_".join(source_name_underscore_list)

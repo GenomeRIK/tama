@@ -57,7 +57,7 @@ class Transcript:
     def finish_bed(self):
         
         
-        exon_num_list = self.exon_dict.keys()
+        exon_num_list = list(self.exon_dict.keys())
         self.num_exons = len(exon_num_list)
         exon_num_list.sort()
         
@@ -77,7 +77,7 @@ class Transcript:
         self.t_start = self.start_list[0] - 1 # adjust for bed indexing
         self.t_end = self.end_list[-1]
         
-        for i in xrange(self.num_exons):
+        for i in range(self.num_exons):
             e_start = self.start_list[i]
             e_rel_start = e_start - self.t_start - 1 # adjust for bed indexing
             

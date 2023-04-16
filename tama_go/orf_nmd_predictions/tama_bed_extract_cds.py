@@ -116,16 +116,16 @@ class Transcript:
 
         t_start_list = [int(t_start)] * int(num_exons)
         start_list = starts.split(",")
-        start_list = filter(None, start_list)
+        start_list = [i for i in start_list if i]
         block_list = blocks.split(",")
-        block_list = filter(None, block_list)
+        block_list = [i for i in block_list if i]
 
         self.bed_starts = starts
         self.bed_blocks = blocks
 
         # coordinate starts and ends
-        self.start_list = map(calc_exon_start, t_start_list, start_list)
-        self.end_list = map(calc_end, self.start_list, block_list)
+        self.start_list = list(map(calc_exon_start, t_start_list, start_list))
+        self.end_list = list(map(calc_end, self.start_list, block_list))
         self.num_exons = num_exons
 
         self.cds_start = cds_start  #################################################
@@ -135,7 +135,7 @@ class Transcript:
 
         self.trans_coord_list = []
         self.trans_coord_dict = {} # trans_coord_dict[coord] = index
-        for i in xrange(int(self.num_exons)):
+        for i in range(int(self.num_exons)):
 
             e_index = i
             e_num = e_index + 1
@@ -145,7 +145,7 @@ class Transcript:
 
             e_length = e_end - e_start
 
-            for j in xrange(e_length + 1):
+            for j in range(e_length + 1):
                 pos_coord = e_start + j
                 self.trans_coord_list.append(pos_coord)
                 self.trans_coord_dict[pos_coord] = len(self.trans_coord_list) - 1
@@ -227,7 +227,7 @@ class Transcript:
         cds_e_start_list = []
         cds_e_end_list = []
 
-        for i in xrange(int(self.num_exons)):
+        for i in range(int(self.num_exons)):
 
             e_index = i
             e_num = e_index + 1
@@ -266,7 +266,7 @@ class Transcript:
         # convert to new bed line
         new_block_list = []
         new_starts_list = []
-        for i in xrange(len(cds_e_start_list)):
+        for i in range(len(cds_e_start_list)):
             cds_e_start = cds_e_start_list[i]
             cds_e_end = cds_e_end_list[i]
 

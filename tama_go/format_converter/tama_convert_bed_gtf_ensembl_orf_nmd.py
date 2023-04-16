@@ -96,16 +96,16 @@ class Transcript:
         self.strand = strand
         t_start_list = [int(t_start)] * int(num_exons)
         start_list = starts.split(",")
-        start_list = filter(None, start_list)
+        start_list = [i for i in start_list if i]
         block_list = blocks.split(",")
-        block_list = filter(None, block_list)
+        block_list = [i for i in block_list if i]
         
         self.bed_starts = starts
         self.bed_blocks = blocks
         
         #coordinate starts and ends
-        self.start_list = map(calc_exon_start,t_start_list,start_list)
-        self.end_list =  map(calc_end,self.start_list,block_list)
+        self.start_list = list(map(calc_exon_start,t_start_list,start_list))
+        self.end_list =  list(map(calc_end,self.start_list,block_list))
         self.num_exons = num_exons
 
 
@@ -133,7 +133,7 @@ class Transcript:
         three_utr_num_list = []
 
         
-        for i in xrange(int(self.num_exons)):
+        for i in range(int(self.num_exons)):
             if self.strand == "+":
                 e_index = i
                 e_num = e_index + 1
@@ -367,7 +367,7 @@ class Transcript:
                 sys.exit()
 
 
-        for i in xrange(len(five_utr_start_list)):
+        for i in range(len(five_utr_start_list)):
             five_utr_start = five_utr_start_list[i]
             five_utr_end = five_utr_end_list[i]
             five_utr_e_num = five_utr_num_list[i]
@@ -380,7 +380,7 @@ class Transcript:
                 outfile.write(outline)
                 outfile.write("\n")
 
-        for i in xrange(len(three_utr_start_list)):
+        for i in range(len(three_utr_start_list)):
             three_utr_start = three_utr_start_list[i]
             three_utr_end = three_utr_end_list[i]
             three_utr_e_num = three_utr_num_list[i]
